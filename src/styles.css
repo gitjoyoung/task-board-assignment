@@ -1,0 +1,128 @@
+:root {
+  --bg: #f4f5f7;
+  --col-bg: #ebecf0;
+  --card-bg: #ffffff;
+  --text: #172b4d;
+  --muted: #6b778c;
+  --border: #dfe1e6;
+  --high: #de350b;
+  --medium: #ff991f;
+  --low: #36b37e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Malgun Gothic', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  padding: 24px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.app-header h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 16px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.column {
+  background: var(--col-bg);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 200px;
+}
+
+.column-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 4px 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.column-title .count {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 대량 렌더 시 컬럼이 무한정 길어지지 않도록 스크롤만 걸어둡니다. */
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  cursor: grab;
+  box-shadow: 0 1px 0 rgba(9, 30, 66, 0.08);
+}
+
+.card.priority-high {
+  border-left-color: var(--high);
+}
+.card.priority-medium {
+  border-left-color: var(--medium);
+}
+.card.priority-low {
+  border-left-color: var(--low);
+}
+
+.card-title {
+  font-size: 14px;
+  margin-bottom: 8px;
+  line-height: 1.35;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+.badge-high {
+  background: var(--high);
+}
+.badge-medium {
+  background: var(--medium);
+}
+.badge-low {
+  background: var(--low);
+}
