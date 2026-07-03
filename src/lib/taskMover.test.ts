@@ -514,6 +514,33 @@ describe('createTaskMover — 의도 정산 (재시도 진행 표시용)', () =>
     await flush()
     expect(onIntentSettled).toHaveBeenCalledWith('t1', false)
   })
+
+  it('409 는 재시도 불가로 종결이므로 onIntentSettled(key, true) — 알림에 좀비 행이 남지 않는다', async () => {
+    const onIntentSettled = vi.fn()
+    const { calls, mover } = setup(makeTask(), [], { onIntentSettled })
+    mover.move('t1', 'done')
+    calls[0].d.reject(
+      new ApiError(409, '다른 곳에서 먼저 수정되었습니다.', {
+        current: makeTask({ status: 'in-progress', version: 5 }),
+      }),
+    )
+    await flush()
+    expect(onIntentSettled).toHaveBeenCalledWith('t1', true)
+  })
+
+  it('대상 카드가 사라진 실패 의도는 재시도 시 조용히 증발하지 않고 종결 처리된다', async () => {
+    const onIntentSettled = vi.fn()
+    const { cache, calls, mover, patchTask } = setup(makeTask(), [], { onIntentSettled })
+    mover.move('t1', 'done')
+    calls[0].d.reject(new ApiError(500, '오류', null))
+    await flush() // 실패 큐에 t1 적재
+
+    cache.delete('t1') // 다른 탭의 삭제 방송 등으로 카드가 사라짐
+    mover.retryFailed()
+
+    expect(patchTask).toHaveBeenCalledTimes(1) // 재전송 없음
+    expect(onIntentSettled).toHaveBeenLastCalledWith('t1', true) // 행 해소 신호
+  })
 })
 
 describe('createTaskMover — 409 충돌과 가드', () => {

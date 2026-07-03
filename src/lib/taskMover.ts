@@ -25,8 +25,10 @@ type Deps = {
   /** 서버가 삭제를 확정했을 때. */
   onRemoved?: (id: string) => void
   /**
-   * 의도 하나의 최종 결말(성공 커밋 / 실패 확정)을 알린다. key 는 getFailed 의 key 와 같아서,
-   * 알림 UI 가 "재시도 중이던 항목이 해소됐는지"를 행 단위로 추적할 수 있다.
+   * 의도 하나의 결말을 알린다. key 는 getFailed 의 key 와 같아서, 알림 UI 가
+   * "재시도 중이던 항목이 해소됐는지"를 행 단위로 추적할 수 있다.
+   * true = 종결(성공 커밋 / 409 서버 채택 / 대상 카드 소멸 — 더 이상 재시도 대상 아님),
+   * false = 실패로 큐에 재대기(재시도 가능).
    */
   onIntentSettled?: (key: string, ok: boolean) => void
   /** 자동 재시도 간 대기(ms). 배열 길이 = 자동 재시도 횟수. 테스트에서 주입. */
@@ -139,10 +141,11 @@ export function createTaskMover({
             ? (err.payload as { current?: Task } | null)?.current
             : undefined
         if (conflict) {
-          // 서버가 진실이다: 최신 상태 채택. 같은 version 재시도는 무의미.
+          // 서버가 진실이다: 최신 상태 채택. 같은 version 재시도는 무의미하므로
+          // 이 의도는 여기서 "종결"이다(true) — 알림에 재시도 불가능한 행이 남지 않게.
           if (!removed.has(id)) writeTask(conflict)
           inFlight.delete(id)
-          onIntentSettled?.(id, false)
+          onIntentSettled?.(id, true)
           onFailure(err instanceof Error ? err.message : '충돌이 발생했습니다.', failed.size)
           return
         }
@@ -164,7 +167,12 @@ export function createTaskMover({
   function update(id: string, patch: Partial<Task>) {
     if (isTempId(id)) return // 임시 카드는 서버 id 가 아직 없다
     const local = readTask(id)
-    if (!local) return
+    if (!local) {
+      // 대상 카드가 사라졌다(다른 탭의 삭제 등): 의도를 조용히 버리지 말고 종결로 알린다
+      failed.delete(id)
+      onIntentSettled?.(id, true)
+      return
+    }
     const state = inFlight.get(id)
     // no-op 가드는 큐 정리보다 먼저 — 같은 컬럼 드롭이 큐의 실패 의도를 지우면 안 된다
     if (!state && isNoop(local, patch)) return
@@ -251,7 +259,12 @@ export function createTaskMover({
   function remove(id: string) {
     if (isTempId(id)) return // 임시 카드는 서버 id 가 아직 없다
     const snapshot = readTask(id)
-    if (!snapshot) return
+    if (!snapshot) {
+      // 이미 없는 카드의 삭제 의도는 목적이 달성된 것과 같다: 종결로 알린다
+      failed.delete(id)
+      onIntentSettled?.(id, true)
+      return
+    }
     failed.delete(id)
     if (!isOnline()) {
       // 선발행: 삭제도 보류 — 카드는 화면에 유지하고 복구 시 재시도
@@ -298,6 +311,8 @@ export function createTaskMover({
         } else if (!inFlight.has(entry.id) && readTask(entry.id)) {
           inFlight.set(entry.id, { baseline: entry.baseline, nextPatch: null })
           send(entry.id, entry.patch, 0)
+        } else if (!readTask(entry.id)) {
+          onIntentSettled?.(entry.id, true) // 카드가 사라진 의도는 종결
         }
       } else if (entry.kind === 'update') update(entry.id, entry.patch)
       else if (entry.kind === 'create') create(entry.input)
