@@ -50,7 +50,11 @@ function voidDeferred(): VoidDeferred {
 function setup(
   initial: Task = makeTask(),
   retryDelays: number[] = [],
-  extra: { onCommitted?: (t: Task) => void; onRemoved?: (id: string) => void } = {},
+  extra: {
+    onCommitted?: (t: Task) => void
+    onRemoved?: (id: string) => void
+    onIntentSettled?: (key: string, ok: boolean) => void
+  } = {},
 ) {
   // 순서 보존이 필요(생성 카드가 "맨 앞"인지 검증)하므로 Map 을 매번 재구성해 upsert 한다.
   // (테스트가 destructure 한 cache 참조가 계속 유효하도록 재할당 대신 같은 Map 을 clear+재삽입한다)
@@ -279,10 +283,15 @@ describe('createTaskMover — 자동 재시도', () => {
     await flush()
 
     expect(mover.getFailed()).toEqual([
-      { kind: 'move', label: '이동할 카드', from: 'todo', to: 'done' }, // 롤백된 위치 → 목표
-      { kind: 'update', label: '수정할 카드', fields: ['title', 'description'] },
-      { kind: 'create', label: '생성할 카드', status: 'in-progress' },
-      { kind: 'remove', label: '삭제할 카드', status: 'done' }, // 복원된 카드의 위치
+      { key: 't1', kind: 'move', label: '이동할 카드', from: 'todo', to: 'done' }, // 롤백된 위치 → 목표
+      { key: 't2', kind: 'update', label: '수정할 카드', fields: ['title', 'description'] },
+      {
+        key: 'create:{"title":"생성할 카드","status":"in-progress"}',
+        kind: 'create',
+        label: '생성할 카드',
+        status: 'in-progress',
+      },
+      { key: 't3', kind: 'remove', label: '삭제할 카드', status: 'done' }, // 복원된 카드의 위치
     ])
   })
 
@@ -478,6 +487,32 @@ describe('createTaskMover — 서버 확정 알림 (다중 탭 방송용)', () =
     removeCalls[0].d.resolve()
     await flush()
     expect(onRemoved).toHaveBeenCalledWith('t1')
+  })
+})
+
+describe('createTaskMover — 의도 정산 (재시도 진행 표시용)', () => {
+  it('의도가 성공으로 확정되면 onIntentSettled(key, true) 가 호출된다', async () => {
+    const onIntentSettled = vi.fn()
+    const { calls, removeCalls, mover } = setup(makeTask(), [], { onIntentSettled })
+
+    mover.move('t1', 'done')
+    calls[0].d.resolve(makeTask({ status: 'done', version: 2 }))
+    await flush()
+    expect(onIntentSettled).toHaveBeenCalledWith('t1', true)
+
+    mover.remove('t1')
+    removeCalls[0].d.resolve()
+    await flush()
+    expect(onIntentSettled).toHaveBeenCalledWith('t1', true)
+  })
+
+  it('자동 재시도까지 소진해 실패로 확정되면 onIntentSettled(key, false) 가 호출된다', async () => {
+    const onIntentSettled = vi.fn()
+    const { calls, mover } = setup(makeTask(), [], { onIntentSettled })
+    mover.move('t1', 'done')
+    calls[0].d.reject(new ApiError(500, '오류', null))
+    await flush()
+    expect(onIntentSettled).toHaveBeenCalledWith('t1', false)
   })
 })
 

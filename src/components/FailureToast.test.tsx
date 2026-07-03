@@ -6,11 +6,11 @@ describe('FailureToast', () => {
   it('다건 실패는 건수 요약과 항목별 상세(어디서 어디로, 어떤 필드)를 보여준다', () => {
     render(
       <FailureToast
-        notice={{ message: '일시적인 서버 오류입니다.', failedCount: 3 }}
+        message="일시적인 서버 오류입니다. 다시 시도해 주세요."
         items={[
-          { kind: 'move', label: '카드 A', from: 'todo', to: 'done' },
-          { kind: 'update', label: '카드 B', fields: ['title', 'priority'] },
-          { kind: 'create', label: '카드 C', status: 'in-progress' },
+          { key: 'a', kind: 'move', label: '카드 A', from: 'todo', to: 'done' },
+          { key: 'b', kind: 'update', label: '카드 B', fields: ['title', 'priority'] },
+          { key: 'c', kind: 'create', label: '카드 C', status: 'in-progress' },
         ]}
         onRetry={() => {}}
         onDiscard={() => {}}
@@ -26,8 +26,8 @@ describe('FailureToast', () => {
   it('단건 실패도 서버 오류 원문 대신 건수 요약을 보여준다', () => {
     render(
       <FailureToast
-        notice={{ message: '일시적인 서버 오류입니다. 다시 시도해 주세요.', failedCount: 1 }}
-        items={[{ kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
+        message="일시적인 서버 오류입니다. 다시 시도해 주세요."
+        items={[{ key: 'a', kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
         onRetry={() => {}}
         onDiscard={() => {}}
       />,
@@ -39,8 +39,8 @@ describe('FailureToast', () => {
   it('오프라인 실패는 원인(연결 확인)을 헤더로 유지한다', () => {
     render(
       <FailureToast
-        notice={{ message: '네트워크 연결을 확인해주세요.', failedCount: 1 }}
-        items={[{ kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
+        message="네트워크 연결을 확인해주세요."
+        items={[{ key: 'a', kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
         onRetry={() => {}}
         onDiscard={() => {}}
       />,
@@ -53,8 +53,8 @@ describe('FailureToast', () => {
     const onDiscard = vi.fn()
     render(
       <FailureToast
-        notice={{ message: '오류', failedCount: 1 }}
-        items={[{ kind: 'remove', label: '카드 C', status: 'done' }]}
+        message="오류"
+        items={[{ key: 'c', kind: 'remove', label: '카드 C', status: 'done' }]}
         onRetry={onRetry}
         onDiscard={onDiscard}
       />,
@@ -65,10 +65,10 @@ describe('FailureToast', () => {
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 
-  it('실패 건수 0(정보성 알림)이면 버튼 없이 메시지만 보여준다', () => {
+  it('해소할 항목이 없으면(정보성 알림) 버튼 없이 메시지만 보여준다', () => {
     render(
       <FailureToast
-        notice={{ message: '다른 곳에서 먼저 수정되었습니다.', failedCount: 0 }}
+        message="다른 곳에서 먼저 수정되었습니다."
         items={[]}
         onRetry={() => {}}
         onDiscard={() => {}}

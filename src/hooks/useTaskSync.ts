@@ -6,10 +6,18 @@ import { createTaskMover, type FailedSummary } from '../lib/taskMover'
 import { TASKS_KEY } from './useTasksQuery'
 
 /**
- * items 는 알림 시점의 실패 목록 스냅샷이다. 라이브로 큐를 읽으면 실패 카드를
- * 다시 옮기는 동안(재전송 중) 행이 사라졌다 실패 시 다시 나타나는 출렁임이 생긴다.
+ * items 는 "아직 해소되지 않은" 실패 의도들이다. 실패가 확정될 때 항목이 쌓이고,
+ * 각 항목은 성공이 확정되는 순간(onIntentSettled) 개별로 빠지며, 마지막 항목이
+ * 해소되면 알림이 닫힌다. 재전송이 진행 중인 동안에는 행이 유지된다(출렁임 없음).
  */
 export type SyncNotice = { message: string; failedCount: number; items: FailedSummary[] }
+
+/** 기존 행 순서를 유지하며 큐의 최신 내용을 병합한다 (같은 key 는 갱신, 새 key 는 추가). */
+function mergeItems(current: FailedSummary[], queue: FailedSummary[]): FailedSummary[] {
+  const map = new Map(current.map((i) => [i.key, i]))
+  for (const q of queue) map.set(q.key, q)
+  return [...map.values()]
+}
 
 /** 다중 탭 방송 메시지. 서버가 확정한 변경만 실어 보낸다 (낙관 상태는 방송 금지). */
 type SyncMessage = { type: 'upsert'; task: Task } | { type: 'remove'; id: string }
@@ -55,8 +63,23 @@ export function useTaskSync() {
           queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) =>
             prev?.filter((t) => t.id !== id),
           ),
+        // 성공으로 해소된 의도는 알림 목록에서 개별로 빠지고, 마지막 행이 빠지면 알림을 닫는다
+        onIntentSettled: (key, ok) => {
+          if (!ok) return // 재실패는 onFailure 가 목록을 갱신한다
+          setNotice((n) => {
+            if (!n) return n
+            const items = n.items.filter((i) => i.key !== key)
+            if (items.length === n.items.length) return n
+            return items.length === 0 ? null : { ...n, items }
+          })
+        },
         onFailure: (message, failedCount) => {
-          setNotice({ message, failedCount, items: moverRef.current?.getFailed() ?? [] })
+          setNotice((n) => ({
+            message,
+            failedCount,
+            // 재전송 중인 행은 유지하고 큐의 최신 내용을 병합한다
+            items: mergeItems(n?.items ?? [], moverRef.current?.getFailed() ?? []),
+          }))
           window.clearTimeout(noticeTimer.current)
           // 재시도할 실패 건이 있으면 사용자가 처리할 때까지 알림을 유지한다
           if (failedCount === 0)

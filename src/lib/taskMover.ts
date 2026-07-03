@@ -24,6 +24,11 @@ type Deps = {
   onCommitted?: (task: Task) => void
   /** 서버가 삭제를 확정했을 때. */
   onRemoved?: (id: string) => void
+  /**
+   * 의도 하나의 최종 결말(성공 커밋 / 실패 확정)을 알린다. key 는 getFailed 의 key 와 같아서,
+   * 알림 UI 가 "재시도 중이던 항목이 해소됐는지"를 행 단위로 추적할 수 있다.
+   */
+  onIntentSettled?: (key: string, ok: boolean) => void
   /** 자동 재시도 간 대기(ms). 배열 길이 = 자동 재시도 횟수. 테스트에서 주입. */
   retryDelays?: number[]
   /** 네트워크 연결 여부. 오프라인이면 요청을 보내지 않고 즉시 큐에 쌓는다. 기본: navigator.onLine */
@@ -46,12 +51,15 @@ type FailedEntry =
   | { kind: 'create'; input: Partial<Task> }
   | { kind: 'remove'; id: string }
 
-/** getFailed 가 돌려주는 실패 의도 요약 — 알림 UI 가 "무엇을 하다 실패했는지" 표시하는 데 쓴다. */
+/**
+ * getFailed 가 돌려주는 실패 의도 요약 — 알림 UI 가 "무엇을 하다 실패했는지" 표시하는 데 쓴다.
+ * key 는 큐 키와 동일하며 onIntentSettled 와 짝을 이룬다.
+ */
 export type FailedSummary =
-  | { kind: 'move'; label: string; from: Status; to: Status }
-  | { kind: 'update'; label: string; fields: string[] }
-  | { kind: 'create'; label: string; status: Status }
-  | { kind: 'remove'; label: string; status: Status }
+  | { key: string; kind: 'move'; label: string; from: Status; to: Status }
+  | { key: string; kind: 'update'; label: string; fields: string[] }
+  | { key: string; kind: 'create'; label: string; status: Status }
+  | { key: string; kind: 'remove'; label: string; status: Status }
 
 /**
  * 일시 오류(500 등)의 자동 재시도는 1회만: 실패 확정을 ~2초 안에 알리기 위해서다.
@@ -90,6 +98,7 @@ export function createTaskMover({
   onFailure,
   onCommitted,
   onRemoved,
+  onIntentSettled,
   retryDelays = DEFAULT_RETRY_DELAYS,
   isOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine),
 }: Deps) {
@@ -108,6 +117,7 @@ export function createTaskMover({
         if (removed.has(id)) {
           // 응답이 오는 사이 카드가 삭제됐다: 되살리지 않는다
           inFlight.delete(id)
+          onIntentSettled?.(id, true)
           return
         }
         if (state.nextPatch) {
@@ -120,6 +130,7 @@ export function createTaskMover({
         } else {
           writeTask(server)
           inFlight.delete(id)
+          onIntentSettled?.(id, true)
         }
       })
       .catch((err: unknown) => {
@@ -131,6 +142,7 @@ export function createTaskMover({
           // 서버가 진실이다: 최신 상태 채택. 같은 version 재시도는 무의미.
           if (!removed.has(id)) writeTask(conflict)
           inFlight.delete(id)
+          onIntentSettled?.(id, false)
           onFailure(err instanceof Error ? err.message : '충돌이 발생했습니다.', failed.size)
           return
         }
@@ -143,6 +155,7 @@ export function createTaskMover({
         inFlight.delete(id)
         const finalPatch = state.nextPatch ? { ...patch, ...state.nextPatch } : patch
         failed.set(id, { kind: 'update', id, patch: finalPatch })
+        onIntentSettled?.(id, false)
         onFailure(err instanceof Error ? err.message : '요청이 실패했습니다.', failed.size)
       })
   }
@@ -215,6 +228,7 @@ export function createTaskMover({
         dropTask(tempId) // 임시 카드를 서버 카드로 교체
         writeTask(server)
         onCommitted?.(server)
+        onIntentSettled?.(createKey(input), true)
       })
       .catch((err: unknown) => {
         if (attempt < retryDelays.length) {
@@ -223,6 +237,7 @@ export function createTaskMover({
         }
         dropTask(tempId)
         failed.set(createKey(input), { kind: 'create', input }) // 내용 키: 재생성 반복도 1건으로
+        onIntentSettled?.(createKey(input), false)
         onFailure(err instanceof Error ? err.message : '생성이 실패했습니다.', failed.size)
       })
   }
@@ -254,6 +269,7 @@ export function createTaskMover({
       .then(() => {
         removed.delete(id)
         onRemoved?.(id)
+        onIntentSettled?.(id, true)
       })
       .catch((err: unknown) => {
         if (attempt < retryDelays.length) {
@@ -263,6 +279,7 @@ export function createTaskMover({
         removed.delete(id)
         writeTask(snapshot) // 복원
         failed.set(id, { kind: 'remove', id })
+        onIntentSettled?.(id, false)
         onFailure(err instanceof Error ? err.message : '삭제가 실패했습니다.', failed.size)
       })
   }
@@ -300,17 +317,17 @@ export function createTaskMover({
 
   /** 실패한 의도의 종류·대상·상세 — 알림에서 "무엇을 하다 실패했는지" 보여주기 위한 요약. */
   function getFailed(): FailedSummary[] {
-    return [...failed.values()].map((entry): FailedSummary => {
+    return [...failed.entries()].map(([key, entry]): FailedSummary => {
       if (entry.kind === 'create')
-        return { kind: 'create', label: entry.input.title ?? '(제목 없음)', status: entry.input.status ?? 'todo' }
+        return { key, kind: 'create', label: entry.input.title ?? '(제목 없음)', status: entry.input.status ?? 'todo' }
       const card = readTask(entry.id)
       const label = card?.title ?? '(삭제된 카드)'
-      if (entry.kind === 'remove') return { kind: 'remove', label, status: card?.status ?? 'todo' }
+      if (entry.kind === 'remove') return { key, kind: 'remove', label, status: card?.status ?? 'todo' }
       const keys = Object.keys(entry.patch)
       if (keys.length === 1 && keys[0] === 'status')
         // 출발지는 서버 기준점(오프라인 반영분은 화면이 이미 목표를 보여주므로 baseline 이 진실)
-        return { kind: 'move', label, from: (entry.baseline ?? card)?.status ?? 'todo', to: entry.patch.status! }
-      return { kind: 'update', label, fields: keys }
+        return { key, kind: 'move', label, from: (entry.baseline ?? card)?.status ?? 'todo', to: entry.patch.status! }
+      return { key, kind: 'update', label, fields: keys }
     })
   }
 

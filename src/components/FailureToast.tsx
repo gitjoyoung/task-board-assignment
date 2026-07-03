@@ -29,39 +29,39 @@ function describe(f: FailedSummary): string {
 }
 
 interface Props {
-  /** 표시에 필요한 필드만 받는다 (프레젠테이션 컴포넌트) */
-  notice: { message: string; failedCount: number }
-  /** 실패 의도 목록 — 알림 시점의 스냅샷 (출렁임 방지, useTaskSync 참고) */
+  /** 알림 메시지 — 실패 건이 있으면 건수 요약으로 대체하고, 오프라인 원인은 유지한다 */
+  message: string
+  /** 아직 해소되지 않은 실패 의도 목록 — 성공이 확정된 행은 개별로 빠진다 */
   items: FailedSummary[]
   onRetry: () => void
   onDiscard: () => void
 }
 
 /**
- * 실패 알림. 두 선택지(재시도/요청 취소)로 모든 실패가 명시적으로 해소된다
- * (숨김 상태의 유령 큐 없음). 비차단이라 결정을 미뤄도 작업엔 지장이 없다.
+ * 실패 알림. 두 선택지(재시도/요청 취소)로 모든 실패가 명시적으로 해소된다.
+ * 재시도를 눌러도 알림은 유지되고, 성공한 항목부터 목록에서 빠지며
+ * 마지막 항목이 해소되어야 닫힌다. 비차단이라 결정을 미뤄도 작업엔 지장이 없다.
  */
-export function FailureToast({ notice, items, onRetry, onDiscard }: Props) {
+export function FailureToast({ message, items, onRetry, onDiscard }: Props) {
+  const count = items.length
   return (
     <div className="toast" role="alert">
       {/* 헤더: 실패 건은 건수 요약으로 통일(서버 오류 원문은 소음), 오프라인은 원인이라 유지 */}
       <span>
-        {notice.failedCount > 0 && notice.message !== OFFLINE_MESSAGE
-          ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
-          : notice.message}
+        {count > 0 && message !== OFFLINE_MESSAGE
+          ? `변경 ${count}건이 저장되지 않았습니다.`
+          : message}
       </span>
-      {items.length > 0 && (
+      {count > 0 && (
         <ul className="toast-items">
-          {items.map((f, i) => (
-            <li key={i}>{describe(f)}</li>
+          {items.map((f) => (
+            <li key={f.key}>{describe(f)}</li>
           ))}
         </ul>
       )}
-      {notice.failedCount > 0 && (
+      {count > 0 && (
         <>
-          <button onClick={onRetry}>
-            {notice.failedCount > 1 ? `${notice.failedCount}건 재시도` : '재시도'}
-          </button>
+          <button onClick={onRetry}>{count > 1 ? `${count}건 재시도` : '재시도'}</button>
           <button onClick={onDiscard}>요청 취소</button>
         </>
       )}

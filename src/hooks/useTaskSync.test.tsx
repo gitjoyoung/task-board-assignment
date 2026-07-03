@@ -65,6 +65,38 @@ describe('useTaskSync — 실패 알림 스냅샷', () => {
   })
 })
 
+describe('useTaskSync — 재시도 해소 대기', () => {
+  it('재시도 중 성공한 항목은 목록에서 빠지고, 전부 해소되면 알림이 닫힌다', async () => {
+    const tab = setupTab([makeTask({ id: 'a' }), makeTask({ id: 'b', title: '두 번째 카드' })])
+    // 두 카드 모두 실패 확정 (각 2회 거절)
+    mockedUpdate.mockRejectedValue(new Error('서버 오류'))
+
+    act(() => {
+      tab.hook.result.current.mover.move('a', 'done')
+      tab.hook.result.current.mover.move('b', 'done')
+    })
+    await waitFor(() => expect(tab.hook.result.current.notice?.items).toHaveLength(2))
+
+    // 재시도: a 는 성공, b 는 또 실패
+    mockedUpdate.mockReset()
+    mockedUpdate.mockImplementation((id: string) =>
+      id === 'a'
+        ? Promise.resolve(makeTask({ id: 'a', status: 'done', version: 2 }))
+        : Promise.reject(new Error('서버 오류')),
+    )
+    act(() => tab.hook.result.current.mover.retryFailed())
+
+    // a 행만 빠지고 알림은 유지된다
+    await waitFor(() => expect(tab.hook.result.current.notice?.items).toHaveLength(1))
+    expect(tab.hook.result.current.notice!.items[0].key).toBe('b')
+
+    // 다시 재시도: b 도 성공 → 알림이 닫힌다
+    mockedUpdate.mockResolvedValue(makeTask({ id: 'b', status: 'done', version: 2 }))
+    act(() => tab.hook.result.current.mover.retryFailed())
+    await waitFor(() => expect(tab.hook.result.current.notice).toBeNull())
+  })
+})
+
 describe('useTaskSync — 다중 탭 동기화', () => {
   it('한 탭의 서버 확정 변경이 다른 탭 캐시에 반영된다 (재조회 없이)', async () => {
     const task = makeTask()

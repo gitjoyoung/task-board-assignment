@@ -90,11 +90,12 @@ export default function Board() {
       />
       {notice && (
         <FailureToast
-          notice={notice}
+          message={notice.message}
           items={notice.items}
           onRetry={() => {
+            // 알림은 닫지 않는다 — 성공이 확정된 항목부터 목록에서 빠지고,
+            // 전부 해소되면 useTaskSync 가 알림을 닫는다
             mover.retryFailed()
-            dismissNotice()
           }}
           onDiscard={() => {
             mover.discardFailed()
