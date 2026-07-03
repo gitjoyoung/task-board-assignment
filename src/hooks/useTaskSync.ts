@@ -56,8 +56,14 @@ export function useTaskSync() {
         writeTask: (task) =>
           queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) => {
             if (!prev) return prev
-            const exists = prev.some((t) => t.id === task.id)
-            return exists ? prev.map((t) => (t.id === task.id ? task : t)) : [task, ...prev]
+            const existing = prev.find((t) => t.id === task.id)
+            if (!existing) return [task, ...prev]
+            // 컬럼이 바뀐 카드는 배열 맨 앞으로 — 대상 컬럼 최상단에 보이게 한다.
+            // 자기 배열 위치로 들어가면 가상화 창 밖(수백 번째 줄)에 떨어져
+            // "이동이 반영 안 된 것처럼" 보이는 문제가 있었다.
+            if (existing.status !== task.status)
+              return [task, ...prev.filter((t) => t.id !== task.id)]
+            return prev.map((t) => (t.id === task.id ? task : t))
           }),
         dropTask: (id) =>
           queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) =>
@@ -104,9 +110,11 @@ export function useTaskSync() {
         if (msg.type === 'remove') return prev.filter((t) => t.id !== msg.id)
         const existing = prev.find((t) => t.id === msg.task.id)
         if (!existing) return [msg.task, ...prev]
-        return existing.version >= msg.task.version
-          ? prev
-          : prev.map((t) => (t.id === msg.task.id ? msg.task : t))
+        if (existing.version >= msg.task.version) return prev
+        // 발신 탭과 같은 표시 규칙: 컬럼이 바뀌면 맨 앞으로
+        if (existing.status !== msg.task.status)
+          return [msg.task, ...prev.filter((t) => t.id !== msg.task.id)]
+        return prev.map((t) => (t.id === msg.task.id ? msg.task : t))
       })
     }
     channel.addEventListener('message', onMessage)

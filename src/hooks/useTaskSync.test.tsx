@@ -97,6 +97,23 @@ describe('useTaskSync — 재시도 해소 대기', () => {
   })
 })
 
+describe('useTaskSync — 이동 카드의 표시 위치', () => {
+  it('컬럼이 바뀐 카드는 배열 맨 앞으로 온다 (가상화 창 밖으로 사라지지 않게)', async () => {
+    // 앞에 다른 카드들이 있어도, 이동한 카드가 대상 컬럼 최상단에 보여야 한다
+    const others = Array.from({ length: 3 }, (_, i) =>
+      makeTask({ id: `done-${i}`, status: 'done' }),
+    )
+    const tab = setupTab([...others, makeTask({ id: 'a', status: 'todo' })])
+    mockedUpdate.mockResolvedValue(makeTask({ id: 'a', status: 'done', version: 2 }))
+
+    act(() => tab.hook.result.current.mover.move('a', 'done'))
+    await waitFor(() => {
+      const tasks = tab.client.getQueryData<Task[]>(TASKS_KEY)!
+      expect(tasks[0]).toMatchObject({ id: 'a', status: 'done', version: 2 })
+    })
+  })
+})
+
 describe('useTaskSync — 네트워크 복구', () => {
   it('복구 자동 재전송 중에도 알림이 유지된다 (닫았다 다시 뜨는 깜빡임 회귀 방지)', async () => {
     const tab = setupTab([makeTask()])
