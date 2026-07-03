@@ -44,8 +44,10 @@ body {
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+  max-width: 480px;
   background: var(--text);
   color: #fff;
   padding: 10px 18px;
@@ -360,4 +362,19 @@ body {
   display: inline-block;
   width: auto;
   margin: 0;
+}
+
+.toast-items {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0 0 0 4px;
+  list-style: none;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.toast-items li {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

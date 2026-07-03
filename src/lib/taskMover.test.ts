@@ -257,6 +257,26 @@ describe('createTaskMover — 자동 재시도', () => {
     expect(patchTask).toHaveBeenCalledTimes(2) // 추가 요청 없음
   })
 
+  it('getFailed 는 실패한 의도의 종류와 대상 제목을 알려준다', async () => {
+    const t1 = makeTask({ id: 't1', title: '이동할 카드', status: 'todo' })
+    const { cache, calls, mover, postCalls } = setup(t1, [])
+    cache.set('t2', makeTask({ id: 't2', title: '수정할 카드' }))
+
+    mover.move('t1', 'done')
+    mover.update('t2', { title: '바뀐 제목' })
+    mover.create({ title: '생성할 카드' })
+    calls[0].d.reject(new ApiError(500, '오류', null))
+    calls[1].d.reject(new ApiError(500, '오류', null))
+    postCalls[0].d.reject(new ApiError(500, '오류', null))
+    await flush()
+
+    expect(mover.getFailed()).toEqual([
+      { kind: 'move', label: '이동할 카드' },
+      { kind: 'update', label: '수정할 카드' }, // 롤백된 현재 제목 기준
+      { kind: 'create', label: '생성할 카드' },
+    ])
+  })
+
   it('discardFailed 는 실패 큐를 폐기한다: 이후 retryFailed 가 아무것도 재생하지 않는다', async () => {
     const t1 = makeTask({ id: 't1', status: 'todo' })
     const t2 = makeTask({ id: 't2', status: 'todo' })

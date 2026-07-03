@@ -256,5 +256,17 @@ export function createTaskMover({
     failed.clear()
   }
 
-  return { move, update, create, remove, retryFailed, discardFailed }
+  /** 실패한 의도의 종류와 대상 제목 — 알림에서 "무엇이 실패했는지" 보여주기 위한 요약. */
+  function getFailed(): Array<{ kind: 'move' | 'update' | 'create' | 'remove'; label: string }> {
+    return [...failed.values()].map((entry) => {
+      if (entry.kind === 'create') return { kind: 'create', label: entry.input.title ?? '(제목 없음)' }
+      const label = readTask(entry.id)?.title ?? '(삭제된 카드)'
+      if (entry.kind === 'remove') return { kind: 'remove', label }
+      // status 만 바꾸는 patch 는 이동, 그 외는 수정
+      const keys = Object.keys(entry.patch)
+      return { kind: keys.length === 1 && keys[0] === 'status' ? 'move' : 'update', label }
+    })
+  }
+
+  return { move, update, create, remove, retryFailed, discardFailed, getFailed }
 }

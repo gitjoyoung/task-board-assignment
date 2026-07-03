@@ -168,6 +168,17 @@ export default function Board() {
               ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
               : notice.message}
           </span>
+          {notice.failedCount > 0 && (
+            <ul className="toast-items">
+              {/* 렌더 시점의 큐를 읽으므로 항상 현재 대기 목록과 일치한다 */}
+              {mover.getFailed().map((f, i) => (
+                <li key={i}>
+                  {{ move: '이동', update: '수정', create: '생성', remove: '삭제' }[f.kind]}:{' '}
+                  &ldquo;{f.label}&rdquo;
+                </li>
+              ))}
+            </ul>
+          )}
           {/* 두 선택지로 모든 실패가 명시적으로 해소된다 (숨김 상태의 유령 큐 없음).
               토스트는 비차단이라 결정을 미뤄도 작업엔 지장이 없다. */}
           {notice.failedCount > 0 && (
