@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveTask, filterByTitle, filterByPriority, filterTasks } from './tasks'
+import { moveTask, filterByTitle, filterByPriority, filterTasks, groupByStatus } from './tasks'
 import type { Task } from '../types'
 
 const make = (id: string, over: Partial<Task> = {}): Task => ({
@@ -79,5 +79,25 @@ describe('filterTasks', () => {
     ]
     const result = filterTasks(tasks, { query: '', priority: 'high' })
     expect(result).toHaveLength(2)
+  })
+})
+
+describe('groupByStatus', () => {
+  it('상태별로 분배하고 원본 순서를 보존한다', () => {
+    const tasks = [
+      make('a', { status: 'done' }),
+      make('b', { status: 'todo' }),
+      make('c', { status: 'done' }),
+      make('d', { status: 'in-progress' }),
+    ]
+    const map = groupByStatus(tasks)
+    expect(map.todo.map((t) => t.id)).toEqual(['b'])
+    expect(map['in-progress'].map((t) => t.id)).toEqual(['d'])
+    expect(map.done.map((t) => t.id)).toEqual(['a', 'c'])
+  })
+
+  it('빈 입력이면 세 컬럼 모두 빈 배열이다', () => {
+    const map = groupByStatus([])
+    expect(map).toEqual({ todo: [], 'in-progress': [], done: [] })
   })
 })

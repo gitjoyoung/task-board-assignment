@@ -26,3 +26,10 @@ export function filterTasks(
 ): Task[] {
   return filterByPriority(filterByTitle(tasks, f.query), f.priority)
 }
+
+/** 상태별 컬럼 분배. 원본 배열 순서를 보존한다. */
+export function groupByStatus(tasks: Task[]): Record<Status, Task[]> {
+  const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
+  for (const t of tasks) map[t.status].push(t)
+  return map
+}

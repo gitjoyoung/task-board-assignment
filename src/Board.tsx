@@ -1,14 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 import type { Task, Status, Priority } from './types'
-import { getTasks, updateTask, createTask, deleteTask } from './api/client'
-import { createTaskMover } from './lib/taskMover'
-import { filterTasks } from './lib/tasks'
+import { useTasksQuery } from './hooks/useTasksQuery'
+import { useTaskSync } from './hooks/useTaskSync'
+import { filterTasks, groupByStatus } from './lib/tasks'
 import { useDebouncedValue } from './lib/useDebouncedValue'
 import { Column } from './components/Column'
+import { BoardToolbar } from './components/BoardToolbar'
+import { FailureToast } from './components/FailureToast'
 import { TaskDialog, type TaskDialogInput } from './components/TaskDialog'
-
-export const TASKS_KEY = ['tasks'] as const
 
 const COLUMNS: { status: Status; title: string }[] = [
   { status: 'todo', title: 'To Do' },
@@ -16,82 +15,27 @@ const COLUMNS: { status: Status; title: string }[] = [
   { status: 'done', title: 'Done' },
 ]
 
-export default function Board() {
-  const queryClient = useQueryClient()
-  const {
-    data: tasks,
-    isPending,
-    isError,
-    error,
-    refetch,
-    isRefetching,
-  } = useQuery({
-    queryKey: TASKS_KEY,
-    queryFn: ({ signal }) => getTasks(signal),
-  })
+type DialogState = { mode: 'create'; status: Status } | { mode: 'edit'; task: Task } | null
 
-  const [notice, setNotice] = useState<{ message: string; failedCount: number } | null>(null)
-  const noticeTimer = useRef<number>()
-  // 검색어 입력창은 즉시 반응하고, 실제 필터링(디바운스된 값)만 250ms 지연시킨다
+export default function Board() {
+  const { data: tasks, isPending, isError, error, refetch, isRefetching } = useTasksQuery()
+  const { mover, notice, dismissNotice } = useTaskSync()
+
+  // 화면 전용 상태: 검색/필터/다이얼로그
   const [query, setQuery] = useState('')
   const [priority, setPriority] = useState<Priority | 'all'>('all')
-  const debouncedQuery = useDebouncedValue(query)
-  const [dialog, setDialog] = useState<
-    { mode: 'create'; status: Status } | { mode: 'edit'; task: Task } | null
-  >(null)
+  const debouncedQuery = useDebouncedValue(query) // 입력은 즉시, 필터링만 250ms 지연
+  const [dialog, setDialog] = useState<DialogState>(null)
 
-  // 낙관적 CRUD + 롤백 + 카드별 직렬화 (로직은 src/lib/taskMover.ts, 테스트 포함)
-  const mover = useMemo(
-    () =>
-      createTaskMover({
-        patchTask: updateTask,
-        postTask: createTask,
-        removeTask: deleteTask,
-        readTask: (id) =>
-          queryClient.getQueryData<Task[]>(TASKS_KEY)?.find((t) => t.id === id),
-        writeTask: (task) =>
-          queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) => {
-            if (!prev) return prev
-            const exists = prev.some((t) => t.id === task.id)
-            return exists ? prev.map((t) => (t.id === task.id ? task : t)) : [task, ...prev]
-          }),
-        dropTask: (id) =>
-          queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) => prev?.filter((t) => t.id !== id)),
-        onFailure: (message, failedCount) => {
-          setNotice({ message, failedCount })
-          window.clearTimeout(noticeTimer.current)
-          // 재시도할 실패 건이 있으면 사용자가 처리할 때까지 알림을 유지한다
-          if (failedCount === 0)
-            noticeTimer.current = window.setTimeout(() => setNotice(null), 4000)
-        },
-      }),
-    [queryClient],
+  const byStatus = useMemo(
+    () => groupByStatus(filterTasks(tasks ?? [], { query: debouncedQuery, priority })),
+    [tasks, debouncedQuery, priority],
   )
-
-  // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다.
-  // 알림도 함께 닫는다 — 재전송이 또 실패하면 onFailure 가 다시 띄운다.
-  useEffect(() => {
-    const onOnline = () => {
-      mover.retryFailed()
-      setNotice(null)
-    }
-    window.addEventListener('online', onOnline)
-    return () => window.removeEventListener('online', onOnline)
-  }, [mover])
-
-  const moveTask = (id: string, status: Status) => mover.move(id, status)
 
   const handleSave = (input: TaskDialogInput) => {
     if (dialog?.mode === 'edit') mover.update(dialog.task.id, input)
     else if (dialog?.mode === 'create') mover.create({ ...input, status: dialog.status })
   }
-
-  const byStatus = useMemo(() => {
-    const filtered = filterTasks(tasks ?? [], { query: debouncedQuery, priority })
-    const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
-    for (const t of filtered) map[t.status].push(t)
-    return map
-  }, [tasks, debouncedQuery, priority])
 
   if (isPending) return <p className="hint">불러오는 중…</p>
 
@@ -111,36 +55,19 @@ export default function Board() {
       <div className="board-state">
         <p>태스크가 없습니다.</p>
         <p className="hint">첫 태스크를 추가해 보세요.</p>
-        <button onClick={() => setDialog({ mode: 'create', status: 'todo' })}>
-          태스크 추가
-        </button>
-        <TaskDialog
-          open={dialog !== null}
-          onClose={() => setDialog(null)}
-          onSave={handleSave}
-        />
+        <button onClick={() => setDialog({ mode: 'create', status: 'todo' })}>태스크 추가</button>
+        <TaskDialog open={dialog !== null} onClose={() => setDialog(null)} onSave={handleSave} />
       </div>
     )
 
   return (
     <>
-      <div className="board-toolbar">
-        <input
-          type="search"
-          placeholder="제목 검색"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <select
-          value={priority}
-          onChange={(e) => setPriority(e.target.value as Priority | 'all')}
-        >
-          <option value="all">전체 우선순위</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-      </div>
+      <BoardToolbar
+        query={query}
+        priority={priority}
+        onQueryChange={setQuery}
+        onPriorityChange={setPriority}
+      />
       <div className="board">
         {COLUMNS.map((col) => (
           <Column
@@ -148,7 +75,7 @@ export default function Board() {
             title={col.title}
             status={col.status}
             tasks={byStatus[col.status]}
-            onMove={moveTask}
+            onMove={mover.move}
             onAdd={(status) => setDialog({ mode: 'create', status })}
             onEdit={(task) => setDialog({ mode: 'edit', task })}
           />
@@ -159,50 +86,21 @@ export default function Board() {
         task={dialog?.mode === 'edit' ? dialog.task : undefined}
         onClose={() => setDialog(null)}
         onSave={handleSave}
-        onDelete={(id) => mover.remove(id)}
+        onDelete={mover.remove}
       />
       {notice && (
-        <div className="toast" role="alert">
-          <span>
-            {notice.failedCount > 1
-              ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
-              : notice.message}
-          </span>
-          {notice.failedCount > 0 && (
-            <ul className="toast-items">
-              {/* 렌더 시점의 큐를 읽으므로 항상 현재 대기 목록과 일치한다 */}
-              {mover.getFailed().map((f, i) => (
-                <li key={i}>
-                  {{ move: '이동', update: '수정', create: '생성', remove: '삭제' }[f.kind]}:{' '}
-                  &ldquo;{f.label}&rdquo;
-                </li>
-              ))}
-            </ul>
-          )}
-          {/* 두 선택지로 모든 실패가 명시적으로 해소된다 (숨김 상태의 유령 큐 없음).
-              토스트는 비차단이라 결정을 미뤄도 작업엔 지장이 없다. */}
-          {notice.failedCount > 0 && (
-            <>
-              <button
-                onClick={() => {
-                  mover.retryFailed()
-                  setNotice(null)
-                }}
-              >
-                {notice.failedCount > 1 ? `${notice.failedCount}건 재시도` : '재시도'}
-              </button>
-              <button
-                onClick={() => {
-                  // 실패한 변경 의도를 폐기한다 (화면은 이미 롤백됨).
-                  mover.discardFailed()
-                  setNotice(null)
-                }}
-              >
-                요청 취소
-              </button>
-            </>
-          )}
-        </div>
+        <FailureToast
+          notice={notice}
+          items={notice.failedCount > 0 ? mover.getFailed() : []}
+          onRetry={() => {
+            mover.retryFailed()
+            dismissNotice()
+          }}
+          onDiscard={() => {
+            mover.discardFailed()
+            dismissNotice()
+          }}
+        />
       )}
     </>
   )
