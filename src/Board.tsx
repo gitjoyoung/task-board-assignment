@@ -68,9 +68,13 @@ export default function Board() {
     [queryClient],
   )
 
-  // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다
+  // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다.
+  // 알림도 함께 닫는다 — 재전송이 또 실패하면 onFailure 가 다시 띄운다.
   useEffect(() => {
-    const onOnline = () => mover.retryFailed()
+    const onOnline = () => {
+      mover.retryFailed()
+      setNotice(null)
+    }
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
   }, [mover])
@@ -164,6 +168,8 @@ export default function Board() {
               ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
               : notice.message}
           </span>
+          {/* 두 선택지로 모든 실패가 명시적으로 해소된다 (숨김 상태의 유령 큐 없음).
+              토스트는 비차단이라 결정을 미뤄도 작업엔 지장이 없다. */}
           {notice.failedCount > 0 && (
             <>
               <button
@@ -185,10 +191,6 @@ export default function Board() {
               </button>
             </>
           )}
-          {/* 닫기는 알림만 숨긴다 — 실패 큐는 유지되어 다음 알림에 누적 표시 */}
-          <button aria-label="닫기" onClick={() => setNotice(null)}>
-            ✕
-          </button>
         </div>
       )}
     </>
