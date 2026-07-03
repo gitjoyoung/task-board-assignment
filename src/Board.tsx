@@ -1,8 +1,12 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Task, Status } from './types'
-import { getTasks } from './api/client'
+import type { Task, Status, Priority } from './types'
+import { getTasks, updateTask, createTask, deleteTask } from './api/client'
+import { createTaskMover } from './lib/taskMover'
+import { filterTasks } from './lib/tasks'
+import { useDebouncedValue } from './lib/useDebouncedValue'
 import { Column } from './components/Column'
+import { TaskDialog, type TaskDialogInput } from './components/TaskDialog'
 
 export const TASKS_KEY = ['tasks'] as const
 
@@ -26,18 +30,64 @@ export default function Board() {
     queryFn: ({ signal }) => getTasks(signal),
   })
 
-  // TODO(P1-2): 낙관적 업데이트 + 실패 시 롤백 + 경쟁 상태 처리 (다음 단계)
-  const moveTask = (id: string, status: Status) => {
-    queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) =>
-      prev?.map((t) => (t.id === id ? { ...t, status } : t)),
-    )
+  const [notice, setNotice] = useState<{ message: string; failedCount: number } | null>(null)
+  const noticeTimer = useRef<number>()
+  // 검색어 입력창은 즉시 반응하고, 실제 필터링(디바운스된 값)만 250ms 지연시킨다
+  const [query, setQuery] = useState('')
+  const [priority, setPriority] = useState<Priority | 'all'>('all')
+  const debouncedQuery = useDebouncedValue(query)
+  const [dialog, setDialog] = useState<
+    { mode: 'create'; status: Status } | { mode: 'edit'; task: Task } | null
+  >(null)
+
+  // 낙관적 CRUD + 롤백 + 카드별 직렬화 (로직은 src/lib/taskMover.ts, 테스트 포함)
+  const mover = useMemo(
+    () =>
+      createTaskMover({
+        patchTask: updateTask,
+        postTask: createTask,
+        removeTask: deleteTask,
+        readTask: (id) =>
+          queryClient.getQueryData<Task[]>(TASKS_KEY)?.find((t) => t.id === id),
+        writeTask: (task) =>
+          queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) => {
+            if (!prev) return prev
+            const exists = prev.some((t) => t.id === task.id)
+            return exists ? prev.map((t) => (t.id === task.id ? task : t)) : [task, ...prev]
+          }),
+        dropTask: (id) =>
+          queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) => prev?.filter((t) => t.id !== id)),
+        onFailure: (message, failedCount) => {
+          setNotice({ message, failedCount })
+          window.clearTimeout(noticeTimer.current)
+          // 재시도할 실패 건이 있으면 사용자가 처리할 때까지 알림을 유지한다
+          if (failedCount === 0)
+            noticeTimer.current = window.setTimeout(() => setNotice(null), 4000)
+        },
+      }),
+    [queryClient],
+  )
+
+  // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다
+  useEffect(() => {
+    const onOnline = () => mover.retryFailed()
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [mover])
+
+  const moveTask = (id: string, status: Status) => mover.move(id, status)
+
+  const handleSave = (input: TaskDialogInput) => {
+    if (dialog?.mode === 'edit') mover.update(dialog.task.id, input)
+    else if (dialog?.mode === 'create') mover.create({ ...input, status: dialog.status })
   }
 
   const byStatus = useMemo(() => {
+    const filtered = filterTasks(tasks ?? [], { query: debouncedQuery, priority })
     const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
-    for (const t of tasks ?? []) map[t.status].push(t)
+    for (const t of filtered) map[t.status].push(t)
     return map
-  }, [tasks])
+  }, [tasks, debouncedQuery, priority])
 
   if (isPending) return <p className="hint">불러오는 중…</p>
 
@@ -57,20 +107,90 @@ export default function Board() {
       <div className="board-state">
         <p>태스크가 없습니다.</p>
         <p className="hint">첫 태스크를 추가해 보세요.</p>
+        <button onClick={() => setDialog({ mode: 'create', status: 'todo' })}>
+          태스크 추가
+        </button>
+        <TaskDialog
+          open={dialog !== null}
+          onClose={() => setDialog(null)}
+          onSave={handleSave}
+        />
       </div>
     )
 
   return (
-    <div className="board">
-      {COLUMNS.map((col) => (
-        <Column
-          key={col.status}
-          title={col.title}
-          status={col.status}
-          tasks={byStatus[col.status]}
-          onMove={moveTask}
+    <>
+      <div className="board-toolbar">
+        <input
+          type="search"
+          placeholder="제목 검색"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
-      ))}
-    </div>
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value as Priority | 'all')}
+        >
+          <option value="all">전체 우선순위</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div className="board">
+        {COLUMNS.map((col) => (
+          <Column
+            key={col.status}
+            title={col.title}
+            status={col.status}
+            tasks={byStatus[col.status]}
+            onMove={moveTask}
+            onAdd={(status) => setDialog({ mode: 'create', status })}
+            onEdit={(task) => setDialog({ mode: 'edit', task })}
+          />
+        ))}
+      </div>
+      <TaskDialog
+        open={dialog !== null}
+        task={dialog?.mode === 'edit' ? dialog.task : undefined}
+        onClose={() => setDialog(null)}
+        onSave={handleSave}
+        onDelete={(id) => mover.remove(id)}
+      />
+      {notice && (
+        <div className="toast" role="alert">
+          <span>
+            {notice.failedCount > 1
+              ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
+              : notice.message}
+          </span>
+          {notice.failedCount > 0 && (
+            <>
+              <button
+                onClick={() => {
+                  mover.retryFailed()
+                  setNotice(null)
+                }}
+              >
+                {notice.failedCount > 1 ? `${notice.failedCount}건 재시도` : '재시도'}
+              </button>
+              <button
+                onClick={() => {
+                  // 실패한 변경 의도를 폐기한다 (화면은 이미 롤백됨).
+                  mover.discardFailed()
+                  setNotice(null)
+                }}
+              >
+                요청 취소
+              </button>
+            </>
+          )}
+          {/* 닫기는 알림만 숨긴다 — 실패 큐는 유지되어 다음 알림에 누적 표시 */}
+          <button aria-label="닫기" onClick={() => setNotice(null)}>
+            ✕
+          </button>
+        </div>
+      )}
+    </>
   )
 }

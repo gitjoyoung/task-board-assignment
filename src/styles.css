@@ -38,6 +38,37 @@ body {
   margin: 4px 0 16px;
 }
 
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--text);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(9, 30, 66, 0.3);
+  z-index: 10;
+}
+
+.toast button {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: #fff;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toast button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 .board-state {
   padding: 48px 0;
   text-align: center;
@@ -57,6 +88,28 @@ body {
 .board-state button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.board-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.board-toolbar input,
+.board-toolbar select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--card-bg);
+}
+
+.board-toolbar input {
+  flex: 1;
+  min-width: 0;
 }
 
 .board {
@@ -151,6 +204,103 @@ body {
 }
 .badge-low {
   background: var(--low);
+}
+
+.add-btn {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  border-radius: 5px;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.task-dialog {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  width: 360px;
+  max-width: 90vw;
+  color: var(--text);
+}
+
+.task-dialog::backdrop {
+  background: rgba(9, 30, 66, 0.4);
+}
+
+.task-dialog h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.task-dialog label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.task-dialog input,
+.task-dialog select,
+.task-dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.task-dialog textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.task-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-dialog-actions .spacer {
+  flex: 1;
+}
+
+.task-dialog-actions button {
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.task-dialog-actions .delete-btn {
+  border-color: var(--high);
+  color: var(--high);
+}
+
+.task-dialog-actions button[type='submit'] {
+  border-color: var(--text);
+  background: var(--text);
+  color: #fff;
+}
+
+.confirm-delete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--high);
 }
 
 .dev-panel {

@@ -5,8 +5,10 @@ import Board from './Board'
 import type { Task } from './types'
 import * as api from './api/client'
 
-vi.mock('./api/client', () => ({
+vi.mock('./api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof api>()),
   getTasks: vi.fn(),
+  updateTask: vi.fn(),
 }))
 
 const mockedGetTasks = vi.mocked(api.getTasks)
