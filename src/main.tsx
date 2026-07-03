@@ -1,7 +1,20 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './styles.css'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // 뮤테이션 응답으로 캐시를 직접 갱신하는 전략이므로
+      // 자동 재조회(포커스/마운트)로 5,000개 GET이 반복되지 않게 막습니다.
+      staleTime: Infinity,
+      refetchOnWindowFocus: false,
+      retry: 2, // 초기 로드의 드문 500은 조용히 재시도, 그래도 실패하면 에러 UI
+    },
+  },
+})
 
 async function enableMocking() {
   const { worker } = await import('./mocks/browser')
@@ -15,7 +28,9 @@ async function enableMocking() {
 enableMocking().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <App />
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
     </React.StrictMode>,
   )
 })

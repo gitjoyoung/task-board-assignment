@@ -38,6 +38,27 @@ body {
   margin: 4px 0 16px;
 }
 
+.board-state {
+  padding: 48px 0;
+  text-align: center;
+}
+
+.board-state button {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.board-state button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

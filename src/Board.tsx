@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Task, Status } from './types'
 import { getTasks } from './api/client'
 import { Column } from './components/Column'
+
+export const TASKS_KEY = ['tasks'] as const
 
 const COLUMNS: { status: Status; title: string }[] = [
   { status: 'todo', title: 'To Do' },
@@ -10,33 +13,52 @@ const COLUMNS: { status: Status; title: string }[] = [
 ]
 
 export default function Board() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const {
+    data: tasks,
+    isPending,
+    isError,
+    error,
+    refetch,
+    isRefetching,
+  } = useQuery({
+    queryKey: TASKS_KEY,
+    queryFn: ({ signal }) => getTasks(signal),
+  })
 
-  useEffect(() => {
-    // 순진한 초기 로드: 로딩만 처리합니다.
-    // TODO(P1): 에러 상태 + 재시도, 빈 상태 처리를 구현하세요.
-    getTasks()
-      .then((data) => setTasks(data))
-      .finally(() => setLoading(false))
-  }, [])
-
-  // ⚠️ 서버에 저장하지 않고 로컬 상태만 바꾸는 "순진한" 이동입니다.
-  // TODO(P1): 낙관적 업데이트 + 실패 시 롤백 + 경쟁 상태 처리를 구현하세요.
-  //   - updateTask(id, { status, version }) 로 서버에 반영
-  //   - 실패(15%)하면 이전 상태로 되돌리고 사용자에게 알림
-  //   - 같은 카드를 빠르게 연속 이동해도 최종 상태가 서버와 일치하도록
+  // TODO(P1-2): 낙관적 업데이트 + 실패 시 롤백 + 경쟁 상태 처리 (다음 단계)
   const moveTask = (id: string, status: Status) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
+    queryClient.setQueryData<Task[]>(TASKS_KEY, (prev) =>
+      prev?.map((t) => (t.id === id ? { ...t, status } : t)),
+    )
   }
 
   const byStatus = useMemo(() => {
     const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
-    for (const t of tasks) map[t.status].push(t)
+    for (const t of tasks ?? []) map[t.status].push(t)
     return map
   }, [tasks])
 
-  if (loading) return <p className="hint">불러오는 중…</p>
+  if (isPending) return <p className="hint">불러오는 중…</p>
+
+  if (isError)
+    return (
+      <div className="board-state" role="alert">
+        <p>태스크를 불러오지 못했습니다.</p>
+        <p className="hint">{error.message}</p>
+        <button onClick={() => refetch()} disabled={isRefetching}>
+          {isRefetching ? '재시도 중…' : '다시 시도'}
+        </button>
+      </div>
+    )
+
+  if (tasks.length === 0)
+    return (
+      <div className="board-state">
+        <p>태스크가 없습니다.</p>
+        <p className="hint">첫 태스크를 추가해 보세요.</p>
+      </div>
+    )
 
   return (
     <div className="board">
