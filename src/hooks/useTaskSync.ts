@@ -117,12 +117,11 @@ export function useTaskSync() {
   }, [queryClient])
 
   // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다.
-  // 알림도 함께 닫는다 — 재전송이 또 실패하면 onFailure 가 다시 띄운다.
+  // 알림은 닫지 않는다 — 재시도 버튼과 동일하게, 성공이 확정된 항목부터
+  // 목록에서 빠지고 전부 해소되면 알림이 스스로 닫힌다. (닫고 재전송하는
+  // 옛 방식은 실패분이 다시 뜰 때 알림이 깜빡이는 문제가 있었다)
   useEffect(() => {
-    const onOnline = () => {
-      mover.retryFailed()
-      setNotice(null)
-    }
+    const onOnline = () => mover.retryFailed()
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
   }, [mover])
