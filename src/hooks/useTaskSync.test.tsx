@@ -97,6 +97,23 @@ describe('useTaskSync — 재시도 해소 대기', () => {
   })
 })
 
+describe('useTaskSync — 네트워크 복구', () => {
+  it('복구 자동 재전송 중에도 알림이 유지된다 (닫았다 다시 뜨는 깜빡임 회귀 방지)', async () => {
+    const tab = setupTab([makeTask()])
+    mockedUpdate
+      .mockRejectedValueOnce(new Error('서버 오류'))
+      .mockRejectedValueOnce(new Error('서버 오류')) // 실패 확정 → 큐 적재
+    act(() => tab.hook.result.current.mover.move('a', 'done'))
+    await waitFor(() => expect(tab.hook.result.current.notice).not.toBeNull())
+
+    mockedUpdate.mockReturnValueOnce(new Promise(() => {})) // 재전송은 계속 진행 중
+    act(() => window.dispatchEvent(new Event('online')))
+
+    expect(mockedUpdate).toHaveBeenCalledTimes(3) // 자동 재전송은 발사됐고
+    expect(tab.hook.result.current.notice).not.toBeNull() // 알림은 닫히지 않았다
+  })
+})
+
 describe('useTaskSync — 다중 탭 동기화', () => {
   it('한 탭의 서버 확정 변경이 다른 탭 캐시에 반영된다 (재조회 없이)', async () => {
     const task = makeTask()
