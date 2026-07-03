@@ -33,6 +33,8 @@ interface Props {
   message: string
   /** 아직 해소되지 않은 실패 의도 목록 — 성공이 확정된 행은 개별로 빠진다 */
   items: FailedSummary[]
+  /** 일괄 재시도 진행 중 — 버튼을 잠그고 진행 표시를 보여준다 */
+  retrying?: boolean
   onRetry: () => void
   onDiscard: () => void
 }
@@ -42,7 +44,7 @@ interface Props {
  * 재시도를 눌러도 알림은 유지되고, 성공한 항목부터 목록에서 빠지며
  * 마지막 항목이 해소되어야 닫힌다. 비차단이라 결정을 미뤄도 작업엔 지장이 없다.
  */
-export function FailureToast({ message, items, onRetry, onDiscard }: Props) {
+export function FailureToast({ message, items, retrying, onRetry, onDiscard }: Props) {
   const count = items.length
   return (
     <div className="toast" role="alert">
@@ -61,8 +63,22 @@ export function FailureToast({ message, items, onRetry, onDiscard }: Props) {
       )}
       {count > 0 && (
         <>
-          <button onClick={onRetry}>{count > 1 ? `${count}건 재시도` : '재시도'}</button>
-          <button onClick={onDiscard}>요청 취소</button>
+          <button onClick={onRetry} disabled={retrying}>
+            {retrying ? (
+              <>
+                <span className="spinner" aria-hidden />
+                재시도 중…
+              </>
+            ) : count > 1 ? (
+              `${count}건 재시도`
+            ) : (
+              '재시도'
+            )}
+          </button>
+          {/* 이미 발사된 요청은 취소할 수 없으므로 진행 중엔 폐기도 잠근다 */}
+          <button onClick={onDiscard} disabled={retrying}>
+            요청 취소
+          </button>
         </>
       )}
     </div>

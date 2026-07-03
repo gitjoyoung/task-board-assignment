@@ -114,6 +114,23 @@ describe('useTaskSync — 이동 카드의 표시 위치', () => {
   })
 })
 
+describe('useTaskSync — 재시도 진행 표시', () => {
+  it('retryAll 동안 retrying 이 켜지고, 재실패가 확정되면 꺼진다', async () => {
+    const tab = setupTab([makeTask()])
+    mockedUpdate.mockRejectedValue(new Error('서버 오류'))
+    act(() => tab.hook.result.current.mover.move('a', 'done'))
+    await waitFor(() => expect(tab.hook.result.current.notice).not.toBeNull())
+    expect(tab.hook.result.current.notice!.retrying).toBeFalsy()
+
+    act(() => tab.hook.result.current.retryAll())
+    expect(tab.hook.result.current.notice!.retrying).toBe(true) // 진행 표시 켜짐
+
+    // 재실패 확정(자동 재시도 포함 2회 거절) → 진행 표시 해제 + 행 유지
+    await waitFor(() => expect(tab.hook.result.current.notice!.retrying).toBe(false))
+    expect(tab.hook.result.current.notice!.items).toHaveLength(1)
+  })
+})
+
 describe('useTaskSync — 네트워크 복구', () => {
   it('복구 자동 재전송 중에도 알림이 유지된다 (닫았다 다시 뜨는 깜빡임 회귀 방지)', async () => {
     const tab = setupTab([makeTask()])

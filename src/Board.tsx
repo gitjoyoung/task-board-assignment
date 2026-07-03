@@ -19,7 +19,7 @@ type DialogState = { mode: 'create'; status: Status } | { mode: 'edit'; task: Ta
 
 export default function Board() {
   const { data: tasks, isPending, isError, error, refetch, isRefetching } = useTasksQuery()
-  const { mover, notice, dismissNotice } = useTaskSync()
+  const { mover, notice, retryAll, dismissNotice } = useTaskSync()
 
   // 화면 전용 상태: 검색/필터/다이얼로그
   const [query, setQuery] = useState('')
@@ -92,11 +92,10 @@ export default function Board() {
         <FailureToast
           message={notice.message}
           items={notice.items}
-          onRetry={() => {
-            // 알림은 닫지 않는다 — 성공이 확정된 항목부터 목록에서 빠지고,
-            // 전부 해소되면 useTaskSync 가 알림을 닫는다
-            mover.retryFailed()
-          }}
+          retrying={notice.retrying}
+          // 알림은 닫지 않는다 — 진행 표시가 켜지고, 성공이 확정된 항목부터
+          // 목록에서 빠지며, 전부 해소되면 useTaskSync 가 알림을 닫는다
+          onRetry={retryAll}
           onDiscard={() => {
             mover.discardFailed()
             dismissNotice()

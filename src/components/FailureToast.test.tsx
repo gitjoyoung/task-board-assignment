@@ -65,6 +65,21 @@ describe('FailureToast', () => {
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })
 
+  it('재시도 진행 중에는 버튼이 잠기고 진행 표시를 보여준다', () => {
+    render(
+      <FailureToast
+        message="오류"
+        items={[{ key: 'a', kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
+        retrying
+        onRetry={() => {}}
+        onDiscard={() => {}}
+      />,
+    )
+    const retryBtn = screen.getByRole('button', { name: /재시도 중/ })
+    expect(retryBtn).toBeDisabled()
+    expect(screen.getByRole('button', { name: '요청 취소' })).toBeDisabled()
+  })
+
   it('해소할 항목이 없으면(정보성 알림) 버튼 없이 메시지만 보여준다', () => {
     render(
       <FailureToast

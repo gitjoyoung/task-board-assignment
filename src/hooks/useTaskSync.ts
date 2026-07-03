@@ -10,7 +10,13 @@ import { TASKS_KEY } from './useTasksQuery'
  * 각 항목은 성공이 확정되는 순간(onIntentSettled) 개별로 빠지며, 마지막 항목이
  * 해소되면 알림이 닫힌다. 재전송이 진행 중인 동안에는 행이 유지된다(출렁임 없음).
  */
-export type SyncNotice = { message: string; failedCount: number; items: FailedSummary[] }
+export type SyncNotice = {
+  message: string
+  failedCount: number
+  items: FailedSummary[]
+  /** 일괄 재시도가 진행 중 — 결과(성공 소멸/재실패)가 확정되면 해제된다 */
+  retrying?: boolean
+}
 
 /** 기존 행 순서를 유지하며 큐의 최신 내용을 병합한다 (같은 key 는 갱신, 새 key 는 추가). */
 function mergeItems(current: FailedSummary[], queue: FailedSummary[]): FailedSummary[] {
@@ -85,6 +91,7 @@ export function useTaskSync() {
             failedCount,
             // 재전송 중인 행은 유지하고 큐의 최신 내용을 병합한다
             items: mergeItems(n?.items ?? [], moverRef.current?.getFailed() ?? []),
+            retrying: false, // 재실패 확정 → 진행 표시 해제, 재시도 버튼 재활성화
           }))
           window.clearTimeout(noticeTimer.current)
           // 재시도할 실패 건이 있으면 사용자가 처리할 때까지 알림을 유지한다
@@ -124,15 +131,22 @@ export function useTaskSync() {
     }
   }, [queryClient])
 
+  /** 일괄 재시도 — 진행 표시(retrying)를 켜고 발사한다. 결과는 정산/onFailure 가 반영. */
+  const retryAll = () => {
+    setNotice((n) => (n ? { ...n, retrying: true } : n))
+    // 오프라인 재큐잉처럼 동기적으로 onFailure 가 불리면 retrying 은 즉시 false 로 덮인다
+    moverRef.current?.retryFailed()
+  }
+
   // 네트워크 복구 시 대기 중이던 실패 큐를 자동 재전송한다.
   // 알림은 닫지 않는다 — 재시도 버튼과 동일하게, 성공이 확정된 항목부터
   // 목록에서 빠지고 전부 해소되면 알림이 스스로 닫힌다. (닫고 재전송하는
   // 옛 방식은 실패분이 다시 뜰 때 알림이 깜빡이는 문제가 있었다)
   useEffect(() => {
-    const onOnline = () => mover.retryFailed()
-    window.addEventListener('online', onOnline)
-    return () => window.removeEventListener('online', onOnline)
-  }, [mover])
+    window.addEventListener('online', retryAll)
+    return () => window.removeEventListener('online', retryAll)
+    // eslint 없음: retryAll 은 ref 기반이라 안정적이다
+  }, [])
 
-  return { mover, notice, dismissNotice: () => setNotice(null) }
+  return { mover, notice, retryAll, dismissNotice: () => setNotice(null) }
 }
