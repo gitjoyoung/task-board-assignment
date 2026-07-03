@@ -1,5 +1,5 @@
 import type { Status } from '../types'
-import type { FailedSummary } from '../lib/taskMover'
+import { OFFLINE_MESSAGE, type FailedSummary } from '../lib/taskMover'
 import type { SyncNotice } from '../hooks/useTaskSync'
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -44,8 +44,9 @@ interface Props {
 export function FailureToast({ notice, items, onRetry, onDiscard }: Props) {
   return (
     <div className="toast" role="alert">
+      {/* 헤더: 실패 건은 건수 요약으로 통일(서버 오류 원문은 소음), 오프라인은 원인이라 유지 */}
       <span>
-        {notice.failedCount > 1
+        {notice.failedCount > 0 && notice.message !== OFFLINE_MESSAGE
           ? `변경 ${notice.failedCount}건이 저장되지 않았습니다.`
           : notice.message}
       </span>

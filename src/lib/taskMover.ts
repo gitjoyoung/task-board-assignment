@@ -74,7 +74,7 @@ function isNoop(local: Task, patch: Partial<Task>) {
  * - 생성 중 임시 카드(id 가 temp- 로 시작)의 서버 id 는 아직 없으므로,
  *   그 카드에 대한 update/remove/move 는 무시한다.
  */
-const OFFLINE_MESSAGE = '네트워크 연결을 확인해주세요.'
+export const OFFLINE_MESSAGE = '네트워크 연결을 확인해주세요.'
 
 export function createTaskMover({
   patchTask,

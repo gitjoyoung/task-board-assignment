@@ -23,6 +23,31 @@ describe('FailureToast', () => {
     expect(screen.getByRole('button', { name: '3건 재시도' })).toBeInTheDocument()
   })
 
+  it('단건 실패도 서버 오류 원문 대신 건수 요약을 보여준다', () => {
+    render(
+      <FailureToast
+        notice={{ message: '일시적인 서버 오류입니다. 다시 시도해 주세요.', failedCount: 1 }}
+        items={[{ kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
+        onRetry={() => {}}
+        onDiscard={() => {}}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('변경 1건이 저장되지 않았습니다.')
+    expect(screen.queryByText(/일시적인 서버 오류/)).not.toBeInTheDocument()
+  })
+
+  it('오프라인 실패는 원인(연결 확인)을 헤더로 유지한다', () => {
+    render(
+      <FailureToast
+        notice={{ message: '네트워크 연결을 확인해주세요.', failedCount: 1 }}
+        items={[{ kind: 'move', label: '카드 A', from: 'todo', to: 'done' }]}
+        onRetry={() => {}}
+        onDiscard={() => {}}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('네트워크 연결을 확인해주세요.')
+  })
+
   it('재시도/요청 취소가 각각 콜백을 호출한다', () => {
     const onRetry = vi.fn()
     const onDiscard = vi.fn()
