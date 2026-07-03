@@ -45,6 +45,26 @@ beforeEach(() => {
   mockedUpdate.mockReset()
 })
 
+describe('useTaskSync — 실패 알림 스냅샷', () => {
+  it('알림의 실패 목록은 알림 시점에 고정된다 (재전송 중 출렁이지 않음)', async () => {
+    const tab = setupTab([makeTask()])
+    mockedUpdate
+      .mockRejectedValueOnce(new Error('서버 오류')) // 첫 시도
+      .mockRejectedValueOnce(new Error('서버 오류')) // 자동 재시도 1회 → 실패 확정
+      .mockReturnValueOnce(new Promise(() => {})) // 수동 재이동은 계속 진행 중
+
+    act(() => tab.hook.result.current.mover.move('a', 'done'))
+    await waitFor(() => expect(tab.hook.result.current.notice).not.toBeNull())
+    const itemsAtNotice = tab.hook.result.current.notice!.items
+    expect(itemsAtNotice).toHaveLength(1)
+
+    // 실패한 카드를 손으로 다시 이동 → 큐에서는 빠지지만(재전송 중)
+    // 알림 목록은 스냅샷이라 그대로여야 한다
+    act(() => tab.hook.result.current.mover.move('a', 'done'))
+    expect(tab.hook.result.current.notice!.items).toBe(itemsAtNotice)
+  })
+})
+
 describe('useTaskSync — 다중 탭 동기화', () => {
   it('한 탭의 서버 확정 변경이 다른 탭 캐시에 반영된다 (재조회 없이)', async () => {
     const task = makeTask()

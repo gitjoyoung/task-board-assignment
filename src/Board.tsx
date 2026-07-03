@@ -91,7 +91,7 @@ export default function Board() {
       {notice && (
         <FailureToast
           notice={notice}
-          items={notice.failedCount > 0 ? mover.getFailed() : []}
+          items={notice.items}
           onRetry={() => {
             mover.retryFailed()
             dismissNotice()

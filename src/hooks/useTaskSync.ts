@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Task } from '../types'
 import { createTask, deleteTask, updateTask } from '../api/client'
-import { createTaskMover } from '../lib/taskMover'
+import { createTaskMover, type FailedSummary } from '../lib/taskMover'
 import { TASKS_KEY } from './useTasksQuery'
 
-export type SyncNotice = { message: string; failedCount: number }
+/**
+ * items 는 알림 시점의 실패 목록 스냅샷이다. 라이브로 큐를 읽으면 실패 카드를
+ * 다시 옮기는 동안(재전송 중) 행이 사라졌다 실패 시 다시 나타나는 출렁임이 생긴다.
+ */
+export type SyncNotice = { message: string; failedCount: number; items: FailedSummary[] }
 
 /** 다중 탭 방송 메시지. 서버가 확정한 변경만 실어 보낸다 (낙관 상태는 방송 금지). */
 type SyncMessage = { type: 'upsert'; task: Task } | { type: 'remove'; id: string }
@@ -25,6 +29,9 @@ export function useTaskSync() {
   // 다중 탭 동기화 채널. 생명주기는 아래 useEffect 가 소유한다 —
   // StrictMode 의 mount→cleanup→재mount 에서 닫힌 채널이 남지 않도록 ref 로만 참조.
   const channelRef = useRef<BroadcastChannel | null>(null)
+
+  // onFailure 안에서 mover.getFailed() 를 불러야 하는데 mover 는 아직 생성 전이라 ref 로 우회
+  const moverRef = useRef<ReturnType<typeof createTaskMover> | null>(null)
 
   const mover = useMemo(
     () =>
@@ -49,7 +56,7 @@ export function useTaskSync() {
             prev?.filter((t) => t.id !== id),
           ),
         onFailure: (message, failedCount) => {
-          setNotice({ message, failedCount })
+          setNotice({ message, failedCount, items: moverRef.current?.getFailed() ?? [] })
           window.clearTimeout(noticeTimer.current)
           // 재시도할 실패 건이 있으면 사용자가 처리할 때까지 알림을 유지한다
           if (failedCount === 0)
@@ -58,6 +65,7 @@ export function useTaskSync() {
       }),
     [queryClient],
   )
+  moverRef.current = mover
 
   // 다른 탭이 방송한 서버 확정분을 수신해 캐시에 반영한다.
   // version 가드: 내 것보다 새로운 변경만 받아들인다 — 늦게 도착한 방송이나

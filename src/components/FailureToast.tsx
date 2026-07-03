@@ -1,6 +1,5 @@
 import type { Status } from '../types'
 import { OFFLINE_MESSAGE, type FailedSummary } from '../lib/taskMover'
-import type { SyncNotice } from '../hooks/useTaskSync'
 
 const STATUS_LABEL: Record<Status, string> = {
   todo: 'To Do',
@@ -30,8 +29,9 @@ function describe(f: FailedSummary): string {
 }
 
 interface Props {
-  notice: SyncNotice
-  /** 재시도 대기 중인 실패 의도 목록 (렌더 시점 기준) */
+  /** 표시에 필요한 필드만 받는다 (프레젠테이션 컴포넌트) */
+  notice: { message: string; failedCount: number }
+  /** 실패 의도 목록 — 알림 시점의 스냅샷 (출렁임 방지, useTaskSync 참고) */
   items: FailedSummary[]
   onRetry: () => void
   onDiscard: () => void
