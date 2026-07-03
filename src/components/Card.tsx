@@ -6,12 +6,13 @@ const PRIORITY_LABEL: Record<Task['priority'], string> = {
   low: 'Low',
 }
 
-export function Card({ task }: { task: Task }) {
+export function Card({ task, onClick }: { task: Task; onClick?: () => void }) {
   return (
     <article
       className={`card priority-${task.priority}`}
       draggable
       onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+      onClick={onClick}
     >
       <div className="card-title">{task.title}</div>
       <div className="card-meta">
