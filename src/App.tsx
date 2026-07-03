@@ -1,4 +1,5 @@
 import Board from './Board'
+import { DevPanel } from './components/DevPanel'
 
 export default function App() {
   return (
@@ -10,6 +11,7 @@ export default function App() {
         </p>
       </header>
       <Board />
+      {import.meta.env.DEV && <DevPanel />}
     </div>
   )
 }
