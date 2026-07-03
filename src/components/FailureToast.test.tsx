@@ -3,22 +3,24 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { FailureToast } from './FailureToast'
 
 describe('FailureToast', () => {
-  it('다건 실패는 건수 요약과 항목별 내역(종류: 제목)을 보여준다', () => {
+  it('다건 실패는 건수 요약과 항목별 상세(어디서 어디로, 어떤 필드)를 보여준다', () => {
     render(
       <FailureToast
-        notice={{ message: '일시적인 서버 오류입니다.', failedCount: 2 }}
+        notice={{ message: '일시적인 서버 오류입니다.', failedCount: 3 }}
         items={[
-          { kind: 'move', label: '카드 A' },
-          { kind: 'create', label: '카드 B' },
+          { kind: 'move', label: '카드 A', from: 'todo', to: 'done' },
+          { kind: 'update', label: '카드 B', fields: ['title', 'priority'] },
+          { kind: 'create', label: '카드 C', status: 'in-progress' },
         ]}
         onRetry={() => {}}
         onDiscard={() => {}}
       />,
     )
-    expect(screen.getByRole('alert')).toHaveTextContent('변경 2건이 저장되지 않았습니다.')
-    expect(screen.getByText(/이동: “카드 A”/)).toBeInTheDocument()
-    expect(screen.getByText(/생성: “카드 B”/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '2건 재시도' })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('변경 3건이 저장되지 않았습니다.')
+    expect(screen.getByText('이동: “카드 A” — To Do → Done')).toBeInTheDocument()
+    expect(screen.getByText('수정: “카드 B” — 제목·우선순위 변경')).toBeInTheDocument()
+    expect(screen.getByText('생성: “카드 C” → In Progress')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3건 재시도' })).toBeInTheDocument()
   })
 
   it('재시도/요청 취소가 각각 콜백을 호출한다', () => {
@@ -27,7 +29,7 @@ describe('FailureToast', () => {
     render(
       <FailureToast
         notice={{ message: '오류', failedCount: 1 }}
-        items={[{ kind: 'remove', label: '카드 C' }]}
+        items={[{ kind: 'remove', label: '카드 C', status: 'done' }]}
         onRetry={onRetry}
         onDiscard={onDiscard}
       />,

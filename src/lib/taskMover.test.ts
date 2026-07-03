@@ -257,23 +257,27 @@ describe('createTaskMover — 자동 재시도', () => {
     expect(patchTask).toHaveBeenCalledTimes(2) // 추가 요청 없음
   })
 
-  it('getFailed 는 실패한 의도의 종류와 대상 제목을 알려준다', async () => {
+  it('getFailed 는 실패한 의도의 종류·대상·상세(어디서 어디로, 어떤 필드)를 알려준다', async () => {
     const t1 = makeTask({ id: 't1', title: '이동할 카드', status: 'todo' })
-    const { cache, calls, mover, postCalls } = setup(t1, [])
-    cache.set('t2', makeTask({ id: 't2', title: '수정할 카드' }))
+    const { cache, calls, mover, postCalls, removeCalls } = setup(t1, [])
+    cache.set('t2', makeTask({ id: 't2', title: '수정할 카드', status: 'in-progress' }))
+    cache.set('t3', makeTask({ id: 't3', title: '삭제할 카드', status: 'done' }))
 
     mover.move('t1', 'done')
-    mover.update('t2', { title: '바뀐 제목' })
-    mover.create({ title: '생성할 카드' })
+    mover.update('t2', { title: '바뀐 제목', description: '설명도' })
+    mover.create({ title: '생성할 카드', status: 'in-progress' })
+    mover.remove('t3')
     calls[0].d.reject(new ApiError(500, '오류', null))
     calls[1].d.reject(new ApiError(500, '오류', null))
     postCalls[0].d.reject(new ApiError(500, '오류', null))
+    removeCalls[0].d.reject(new ApiError(500, '오류', null))
     await flush()
 
     expect(mover.getFailed()).toEqual([
-      { kind: 'move', label: '이동할 카드' },
-      { kind: 'update', label: '수정할 카드' }, // 롤백된 현재 제목 기준
-      { kind: 'create', label: '생성할 카드' },
+      { kind: 'move', label: '이동할 카드', from: 'todo', to: 'done' }, // 롤백된 위치 → 목표
+      { kind: 'update', label: '수정할 카드', fields: ['title', 'description'] },
+      { kind: 'create', label: '생성할 카드', status: 'in-progress' },
+      { kind: 'remove', label: '삭제할 카드', status: 'done' }, // 복원된 카드의 위치
     ])
   })
 
@@ -348,13 +352,38 @@ describe('createTaskMover — 오프라인', () => {
     return { ...base, mover, net }
   }
 
-  it('오프라인이면 요청·재시도 없이 즉시 알리고 큐에 쌓는다 (낙관적 반영도 안 함)', () => {
+  it('오프라인 이동은 화면에 즉시 반영하되, 전송은 하지 않고 큐에 보류한다', () => {
     const { cache, mover, patchTask, onFailure } = offlineSetup()
     mover.move('t1', 'done')
 
     expect(patchTask).not.toHaveBeenCalled() // 네트워크 시도 자체가 없음
-    expect(cache.get('t1')!.status).toBe('todo') // 화면도 그대로 (거짓 상태 없음)
+    expect(cache.get('t1')!.status).toBe('done') // 즉각 반응 (사용자 결정)
     expect(onFailure).toHaveBeenCalledWith('네트워크 연결을 확인해주세요.', 1)
+  })
+
+  it('오프라인 연속 이동은 한 건으로 병합되고, 복구 후 서버 기준 version 으로 전송된다', async () => {
+    const { cache, calls, mover, patchTask, net } = offlineSetup()
+    mover.move('t1', 'done')
+    mover.move('t1', 'in-progress')
+    expect(cache.get('t1')!.status).toBe('in-progress') // 화면은 최신 목표
+
+    net.online = true
+    mover.retryFailed()
+    expect(patchTask).toHaveBeenCalledTimes(1) // 병합된 1건만
+    expect(calls[0].patch).toEqual({ status: 'in-progress', version: 1 }) // baseline 의 version
+
+    calls[0].d.resolve(makeTask({ status: 'in-progress', version: 2 }))
+    await flush()
+    expect(cache.get('t1')).toMatchObject({ status: 'in-progress', version: 2 })
+  })
+
+  it('오프라인 이동을 요청 취소하면 화면도 서버 상태로 되돌린다', () => {
+    const { cache, mover } = offlineSetup()
+    mover.move('t1', 'done')
+    expect(cache.get('t1')!.status).toBe('done')
+
+    mover.discardFailed() // 화면이 앞서 나가 있으므로 폐기는 곧 화면 원복
+    expect(cache.get('t1')).toMatchObject({ status: 'todo', version: 1 })
   })
 
   it('생성/삭제도 오프라인이면 즉시 알리고 큐에 쌓는다', () => {
@@ -387,8 +416,9 @@ describe('createTaskMover — 오프라인', () => {
 
     net.online = true
     mover.retryFailed()
-    expect(cache.get('t1')!.status).toBe('done') // 이제 낙관적 반영
+    expect(cache.get('t1')!.status).toBe('done') // 낙관 상태 유지
     expect(patchTask).toHaveBeenCalledTimes(1)
+    expect(calls[0].patch).toEqual({ status: 'done', version: 1 }) // 서버 기준 version
 
     calls[0].d.resolve(makeTask({ status: 'done', version: 2 }))
     await flush()

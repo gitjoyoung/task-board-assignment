@@ -33,14 +33,28 @@ type CardState = {
   nextPatch: Partial<Task> | null
 }
 
-/** 실패 큐에 쌓이는 의도: retryFailed 가 이 정보만으로 재시도를 재현한다. */
+/**
+ * 실패 큐에 쌓이는 의도: retryFailed 가 이 정보만으로 재시도를 재현한다.
+ * baseline 은 오프라인 낙관 반영분의 서버 기준점 — 재전송 version 출처이자 폐기 시 화면 원복 목적지.
+ */
 type FailedEntry =
-  | { kind: 'update'; id: string; patch: Partial<Task> }
+  | { kind: 'update'; id: string; patch: Partial<Task>; baseline?: Task }
   | { kind: 'create'; input: Partial<Task> }
   | { kind: 'remove'; id: string }
 
-/** 일시 오류(500 등)는 조용히 흡수: 최초 1회 + 3회 자동 재시도 (실패율 15% 기준 잔존 ~0.05%) */
-const DEFAULT_RETRY_DELAYS = [300, 600, 1200]
+/** getFailed 가 돌려주는 실패 의도 요약 — 알림 UI 가 "무엇을 하다 실패했는지" 표시하는 데 쓴다. */
+export type FailedSummary =
+  | { kind: 'move'; label: string; from: Status; to: Status }
+  | { kind: 'update'; label: string; fields: string[] }
+  | { kind: 'create'; label: string; status: Status }
+  | { kind: 'remove'; label: string; status: Status }
+
+/**
+ * 일시 오류(500 등)의 자동 재시도는 1회만: 실패 확정을 ~2초 안에 알리기 위해서다.
+ * (3회 재시도는 흡수율이 높지만 낙관 반영 → 롤백 인지 사이가 ~4.5초로 벌어져 혼란을 키웠다.
+ *  1회 기준 실패율 15% → 알림 노출 2.25%, 즉 47번에 1번꼴.)
+ */
+const DEFAULT_RETRY_DELAYS = [300]
 
 function isTempId(id: string) {
   return id.startsWith('temp-')
@@ -139,9 +153,13 @@ export function createTaskMover({
     failed.delete(id) // 수동 재수정은 옛 실패 의도를 대체한다
 
     if (!isOnline()) {
-      // 선발행: 오프라인에선 시도가 무의미하므로 요청·낙관 반영 없이 즉시 알리고 큐에 보류
+      // 선발행: 오프라인에선 시도가 무의미하므로 요청 없이 즉시 알리고 큐에 보류.
+      // 단 화면은 즉시 반영한다(즉각 반응 우선) — 서버 기준점(baseline)을 큐에 보관해
+      // 재전송 version 과 "요청 취소 시 화면 원복"의 근거로 쓴다.
       const merged = prior?.kind === 'update' ? { ...prior.patch, ...patch } : patch
-      failed.set(id, { kind: 'update', id, patch: merged })
+      const baseline = (prior?.kind === 'update' && prior.baseline) || local
+      writeTask({ ...local, ...patch })
+      failed.set(id, { kind: 'update', id, patch: merged, baseline })
       onFailure(OFFLINE_MESSAGE, failed.size)
       return
     }
@@ -245,26 +263,45 @@ export function createTaskMover({
     const entries = [...failed.values()]
     failed.clear()
     for (const entry of entries) {
-      if (entry.kind === 'update') update(entry.id, entry.patch)
+      if (entry.kind === 'update' && entry.baseline) {
+        // 오프라인 낙관 반영분: 화면엔 이미 적용돼 있어 update() 를 다시 태우면
+        // no-op 으로 오인된다 — 보관해 둔 baseline 의 version 으로 직접 전송한다.
+        if (!isOnline()) {
+          failed.set(entry.id, entry)
+          onFailure(OFFLINE_MESSAGE, failed.size)
+        } else if (!inFlight.has(entry.id) && readTask(entry.id)) {
+          inFlight.set(entry.id, { baseline: entry.baseline, nextPatch: null })
+          send(entry.id, entry.patch, 0)
+        }
+      } else if (entry.kind === 'update') update(entry.id, entry.patch)
       else if (entry.kind === 'create') create(entry.input)
       else remove(entry.id)
     }
   }
 
-  /** 실패 큐를 폐기한다(요청 취소). 화면은 실패 시점에 이미 롤백되어 있으므로 의도만 버린다. */
+  /** 실패 큐를 폐기한다(요청 취소). 오프라인 낙관 반영분은 화면도 서버 상태로 되돌린다. */
   function discardFailed() {
+    for (const entry of failed.values()) {
+      if (entry.kind === 'update' && entry.baseline && readTask(entry.id)) {
+        writeTask(entry.baseline)
+      }
+    }
     failed.clear()
   }
 
-  /** 실패한 의도의 종류와 대상 제목 — 알림에서 "무엇이 실패했는지" 보여주기 위한 요약. */
-  function getFailed(): Array<{ kind: 'move' | 'update' | 'create' | 'remove'; label: string }> {
-    return [...failed.values()].map((entry) => {
-      if (entry.kind === 'create') return { kind: 'create', label: entry.input.title ?? '(제목 없음)' }
-      const label = readTask(entry.id)?.title ?? '(삭제된 카드)'
-      if (entry.kind === 'remove') return { kind: 'remove', label }
-      // status 만 바꾸는 patch 는 이동, 그 외는 수정
+  /** 실패한 의도의 종류·대상·상세 — 알림에서 "무엇을 하다 실패했는지" 보여주기 위한 요약. */
+  function getFailed(): FailedSummary[] {
+    return [...failed.values()].map((entry): FailedSummary => {
+      if (entry.kind === 'create')
+        return { kind: 'create', label: entry.input.title ?? '(제목 없음)', status: entry.input.status ?? 'todo' }
+      const card = readTask(entry.id)
+      const label = card?.title ?? '(삭제된 카드)'
+      if (entry.kind === 'remove') return { kind: 'remove', label, status: card?.status ?? 'todo' }
       const keys = Object.keys(entry.patch)
-      return { kind: keys.length === 1 && keys[0] === 'status' ? 'move' : 'update', label }
+      if (keys.length === 1 && keys[0] === 'status')
+        // 출발지는 서버 기준점(오프라인 반영분은 화면이 이미 목표를 보여주므로 baseline 이 진실)
+        return { kind: 'move', label, from: (entry.baseline ?? card)?.status ?? 'todo', to: entry.patch.status! }
+      return { kind: 'update', label, fields: keys }
     })
   }
 
