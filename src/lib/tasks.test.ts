@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveTask, filterByTitle } from './tasks'
+import { moveTask, filterByTitle, filterByPriority, filterTasks } from './tasks'
 import type { Task } from '../types'
 
 const make = (id: string, over: Partial<Task> = {}): Task => ({
@@ -38,5 +38,46 @@ describe('filterByTitle', () => {
   it('빈 검색어면 전체를 반환한다', () => {
     const tasks = [make('a'), make('b')]
     expect(filterByTitle(tasks, '   ')).toHaveLength(2)
+  })
+})
+
+describe('filterByPriority', () => {
+  it("priority 가 'all' 이면 원본 그대로(같은 참조) 반환한다", () => {
+    const tasks = [make('a', { priority: 'high' }), make('b', { priority: 'low' })]
+    expect(filterByPriority(tasks, 'all')).toBe(tasks)
+  })
+
+  it('지정한 priority 만 남긴다', () => {
+    const tasks = [
+      make('a', { priority: 'high' }),
+      make('b', { priority: 'low' }),
+      make('c', { priority: 'high' }),
+    ]
+    const result = filterByPriority(tasks, 'high')
+    expect(result).toHaveLength(2)
+    expect(result.every((t) => t.priority === 'high')).toBe(true)
+  })
+})
+
+describe('filterTasks', () => {
+  it('query 와 priority 를 AND 로 결합한다', () => {
+    const tasks = [
+      make('a', { title: 'Fix login bug', priority: 'high' }),
+      make('b', { title: 'Fix docs typo', priority: 'low' }),
+      make('c', { title: 'Write docs', priority: 'high' }),
+    ]
+    const result = filterTasks(tasks, { query: 'fix', priority: 'high' })
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('a')
+  })
+
+  it('빈 query 면 priority 만 적용된다', () => {
+    const tasks = [
+      make('a', { title: 'Fix login bug', priority: 'high' }),
+      make('b', { title: 'Write docs', priority: 'low' }),
+      make('c', { title: 'Add tests', priority: 'high' }),
+    ]
+    const result = filterTasks(tasks, { query: '', priority: 'high' })
+    expect(result).toHaveLength(2)
   })
 })
