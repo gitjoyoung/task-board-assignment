@@ -409,6 +409,16 @@ describe('createTaskMover — 오프라인', () => {
     expect(onFailure.mock.calls.map((c) => c[1])).toEqual([1, 1, 1])
   })
 
+  it('여전히 오프라인일 때 재시도하면 전송 없이 다시 큐에 남고 알림이 반복된다', () => {
+    const { mover, onFailure, patchTask } = offlineSetup()
+    mover.move('t1', 'done')
+    mover.retryFailed() // 아직 오프라인
+
+    expect(patchTask).not.toHaveBeenCalled()
+    expect(onFailure).toHaveBeenCalledTimes(2) // 계속 알림
+    expect(onFailure.mock.calls[1][1]).toBe(1) // 큐 유지
+  })
+
   it('온라인 복귀 후 retryFailed 가 대기 큐를 그대로 전송한다', async () => {
     const { cache, calls, mover, patchTask, net } = offlineSetup()
     mover.move('t1', 'done')

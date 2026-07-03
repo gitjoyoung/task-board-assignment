@@ -12,5 +12,19 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    coverage: {
+      // 로직이 있는 코드만 측정한다. 제외: mock 서버 내부(과제 제공물),
+      // 엔트리/부트스트랩, dev 전용 도구, 타입 선언.
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/mocks/**',
+        'src/main.tsx',
+        'src/App.tsx',
+        'src/components/DevPanel.tsx',
+        'src/test/**',
+        'src/**/*.test.*',
+        'src/vite-env.d.ts',
+      ],
+    },
   },
 })

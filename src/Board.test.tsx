@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Board from './Board'
 import type { Task } from './types'
@@ -36,8 +36,11 @@ function renderBoard() {
   )
 }
 
+const mockedUpdateTask = vi.mocked(api.updateTask)
+
 beforeEach(() => {
   mockedGetTasks.mockReset()
+  mockedUpdateTask.mockReset()
 })
 
 describe('Board 로드 상태', () => {
@@ -77,5 +80,38 @@ describe('Board 로드 상태', () => {
     expect(await screen.findByText('할 일')).toBeInTheDocument()
     expect(screen.getByText('진행 중 작업')).toBeInTheDocument()
     expect(screen.getByText('끝난 일')).toBeInTheDocument()
+  })
+})
+
+describe('Board 통합 — 낙관 반영 → 롤백 → 재시도', () => {
+  it('이동 실패 시 상세 알림이 뜨고 롤백되며, 재시도가 성공하면 알림이 닫힌다', async () => {
+    const task = makeTask({ id: 'a', title: '통합 카드', status: 'todo', version: 1 })
+    mockedGetTasks.mockResolvedValue([task])
+    mockedUpdateTask
+      .mockRejectedValueOnce(new Error('서버 오류')) // 최초 시도
+      .mockRejectedValueOnce(new Error('서버 오류')) // 자동 재시도 1회
+      .mockResolvedValueOnce({ ...task, status: 'done', version: 2 }) // 수동 재시도
+
+    const { container } = renderBoard()
+    await screen.findByText('통합 카드')
+    const columns = container.querySelectorAll('.column')
+
+    // Done 컬럼에 드롭 → 낙관 반영
+    fireEvent.drop(columns[2], { dataTransfer: { getData: () => 'a' } })
+    // Query v5 는 캐시 알림을 마이크로태스크로 배치하므로 waitFor 로 확인
+    await waitFor(() => expect(columns[2]).toHaveTextContent('통합 카드'))
+
+    // 자동 재시도 소진 후 실패 확정: 상세 알림 + 롤백
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '변경 1건이 저장되지 않았습니다.',
+    )
+    expect(screen.getByText('이동: “통합 카드” — To Do → Done')).toBeInTheDocument()
+    expect(columns[0]).toHaveTextContent('통합 카드') // 롤백
+
+    // 수동 재시도 → 성공 → 알림 닫힘 + 이동 확정
+    fireEvent.click(screen.getByRole('button', { name: '재시도' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(columns[2]).toHaveTextContent('통합 카드')
+    expect(mockedUpdateTask).toHaveBeenCalledTimes(3)
   })
 })
