@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveTask, filterByTitle } from '../lib/tasks'
+import { moveTask, filterByTitle } from './tasks'
 import type { Task } from '../types'
 
 const make = (id: string, over: Partial<Task> = {}): Task => ({

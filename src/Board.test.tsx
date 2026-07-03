@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import Board from '../Board'
-import type { Task } from '../types'
-import * as api from '../api/client'
+import Board from './Board'
+import type { Task } from './types'
+import * as api from './api/client'
 
-vi.mock('../api/client', () => ({
+vi.mock('./api/client', () => ({
   getTasks: vi.fn(),
 }))
 
