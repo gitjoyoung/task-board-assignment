@@ -47,7 +47,11 @@ function voidDeferred(): VoidDeferred {
   return { promise, resolve, reject }
 }
 
-function setup(initial: Task = makeTask(), retryDelays: number[] = []) {
+function setup(
+  initial: Task = makeTask(),
+  retryDelays: number[] = [],
+  extra: { onCommitted?: (t: Task) => void; onRemoved?: (id: string) => void } = {},
+) {
   // 순서 보존이 필요(생성 카드가 "맨 앞"인지 검증)하므로 Map 을 매번 재구성해 upsert 한다.
   // (테스트가 destructure 한 cache 참조가 계속 유효하도록 재할당 대신 같은 Map 을 clear+재삽입한다)
   const cache = new Map<string, Task>([[initial.id, initial]])
@@ -90,6 +94,7 @@ function setup(initial: Task = makeTask(), retryDelays: number[] = []) {
     dropTask: (id) => cache.delete(id),
     onFailure,
     retryDelays,
+    ...extra,
   })
   return {
     cache,
@@ -433,6 +438,46 @@ describe('createTaskMover — 오프라인', () => {
     calls[0].d.resolve(makeTask({ status: 'done', version: 2 }))
     await flush()
     expect(cache.get('t1')).toMatchObject({ status: 'done', version: 2 })
+  })
+})
+
+describe('createTaskMover — 서버 확정 알림 (다중 탭 방송용)', () => {
+  it('수정/생성이 서버에서 확정될 때만 onCommitted 가 서버 값으로 호출된다', async () => {
+    const onCommitted = vi.fn()
+    const { calls, postCalls, mover } = setup(makeTask(), [], { onCommitted })
+
+    mover.move('t1', 'done')
+    expect(onCommitted).not.toHaveBeenCalled() // 낙관 반영 시점엔 호출 안 됨
+
+    const server = makeTask({ status: 'done', version: 2 })
+    calls[0].d.resolve(server)
+    await flush()
+    expect(onCommitted).toHaveBeenCalledWith(server)
+
+    mover.create({ title: '새 카드' })
+    const created = makeTask({ id: 'srv-1', title: '새 카드', version: 1 })
+    postCalls[0].d.resolve(created)
+    await flush()
+    expect(onCommitted).toHaveBeenCalledWith(created)
+  })
+
+  it('실패하면 onCommitted 는 호출되지 않는다', async () => {
+    const onCommitted = vi.fn()
+    const { calls, mover } = setup(makeTask(), [], { onCommitted })
+    mover.move('t1', 'done')
+    calls[0].d.reject(new ApiError(500, '오류', null))
+    await flush()
+    expect(onCommitted).not.toHaveBeenCalled()
+  })
+
+  it('삭제가 서버에서 확정되면 onRemoved 가 호출된다', async () => {
+    const onRemoved = vi.fn()
+    const { removeCalls, mover } = setup(makeTask(), [], { onRemoved })
+    mover.remove('t1')
+    expect(onRemoved).not.toHaveBeenCalled() // 낙관적 제거 시점엔 아직
+    removeCalls[0].d.resolve()
+    await flush()
+    expect(onRemoved).toHaveBeenCalledWith('t1')
   })
 })
 

@@ -9,6 +9,36 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = globalThis.ResizeObserver ?? ResizeObserverStub
 
+// jsdom 에는 BroadcastChannel 이 없다 — 같은 이름의 인스턴스끼리 전달되는 최소 스텁.
+type MessageListener = (e: MessageEvent) => void
+class BroadcastChannelStub {
+  static registry = new Map<string, Set<BroadcastChannelStub>>()
+  private listeners = new Set<MessageListener>()
+  constructor(readonly name: string) {
+    const set = BroadcastChannelStub.registry.get(name) ?? new Set()
+    set.add(this)
+    BroadcastChannelStub.registry.set(name, set)
+  }
+  postMessage(data: unknown) {
+    for (const ch of BroadcastChannelStub.registry.get(this.name) ?? []) {
+      if (ch === this) continue
+      const event = new MessageEvent('message', { data })
+      ch.listeners.forEach((l) => l(event))
+    }
+  }
+  addEventListener(_type: 'message', listener: MessageListener) {
+    this.listeners.add(listener)
+  }
+  removeEventListener(_type: 'message', listener: MessageListener) {
+    this.listeners.delete(listener)
+  }
+  close() {
+    BroadcastChannelStub.registry.get(this.name)?.delete(this)
+  }
+}
+globalThis.BroadcastChannel =
+  globalThis.BroadcastChannel ?? (BroadcastChannelStub as unknown as typeof BroadcastChannel)
+
 // @tanstack/virtual-core 는 스크롤 컨테이너 크기를 offsetWidth/offsetHeight 로 읽는다
 Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
   configurable: true,

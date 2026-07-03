@@ -20,6 +20,10 @@ type Deps = {
    * 409 는 재시도 무의미라 큐에 들어가지 않는다.
    */
   onFailure: (message: string, failedCount: number) => void
+  /** 서버가 수정/이동/생성을 확정했을 때(응답 수신 시). 다중 탭 방송 등 부가 동작용. */
+  onCommitted?: (task: Task) => void
+  /** 서버가 삭제를 확정했을 때. */
+  onRemoved?: (id: string) => void
   /** 자동 재시도 간 대기(ms). 배열 길이 = 자동 재시도 횟수. 테스트에서 주입. */
   retryDelays?: number[]
   /** 네트워크 연결 여부. 오프라인이면 요청을 보내지 않고 즉시 큐에 쌓는다. 기본: navigator.onLine */
@@ -84,6 +88,8 @@ export function createTaskMover({
   writeTask,
   dropTask,
   onFailure,
+  onCommitted,
+  onRemoved,
   retryDelays = DEFAULT_RETRY_DELAYS,
   isOnline = () => (typeof navigator === 'undefined' ? true : navigator.onLine),
 }: Deps) {
@@ -98,6 +104,7 @@ export function createTaskMover({
     patchTask(id, { ...patch, version: state.baseline.version })
       .then((server) => {
         state.baseline = server
+        onCommitted?.(server) // 서버 확정분만 알린다 (낙관 상태는 방송 대상 아님)
         if (removed.has(id)) {
           // 응답이 오는 사이 카드가 삭제됐다: 되살리지 않는다
           inFlight.delete(id)
@@ -207,6 +214,7 @@ export function createTaskMover({
       .then((server) => {
         dropTask(tempId) // 임시 카드를 서버 카드로 교체
         writeTask(server)
+        onCommitted?.(server)
       })
       .catch((err: unknown) => {
         if (attempt < retryDelays.length) {
@@ -245,6 +253,7 @@ export function createTaskMover({
     removeTask(id)
       .then(() => {
         removed.delete(id)
+        onRemoved?.(id)
       })
       .catch((err: unknown) => {
         if (attempt < retryDelays.length) {
